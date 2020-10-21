@@ -10,7 +10,24 @@ version = '1.0-SNAPSHOT-rc001'
 repositories {
     mavenLocal()
     jcenter()
+}
 
+publishing {
+    repositories {
+        maven {
+            name = "FigafPackages"
+            url = uri("https://maven.pkg.github.com/figaf/commons")
+            credentials {
+                username = project.findProperty("gpr.user") ?: System.getenv("USERNAME")
+                password = project.findProperty("gpr.key") ?: System.getenv("TOKEN")
+            }
+        }
+    }
+    publications {
+        gpr(MavenPublication) {
+            from(components.java)
+        }
+    }
 }
 
 dependencies {
