@@ -40,17 +40,19 @@ public class CommonClientWrapper {
 
     private final String ssoUrl;
 
-    public interface ResponseHandlerCallback<R, T> {
+    public interface ResponseHandlerCallbackForReadMethods<R, T> {
         R apply(T resolvedBody) throws Exception;
     }
 
-    public <R> R executeGet(CommonClientWrapperEntity commonClientWrapperEntity, String path, ResponseHandlerCallback<R, String> responseHandlerCallback) {
+    public interface ResponseHandlerCallbackForCrudMethods<R> {
+        R apply(String url, String token, RestTemplateWrapper restTemplateWrapper);
+    }
+
+    public <R> R executeGet(CommonClientWrapperEntity commonClientWrapperEntity, String path, ResponseHandlerCallbackForReadMethods<R, String> responseHandlerCallback) {
         return executeGet(commonClientWrapperEntity, path, responseHandlerCallback, String.class);
     }
 
-    public <R, T> R executeGet(CommonClientWrapperEntity commonClientWrapperEntity, String path, ResponseHandlerCallback<R, T> responseHandlerCallback, Class<T> bodyType) {
-        System.out.println("commonClientWrapperEntity = " + commonClientWrapperEntity);
-        System.out.println("path = " + path);
+    public <R, T> R executeGet(CommonClientWrapperEntity commonClientWrapperEntity, String path, ResponseHandlerCallbackForReadMethods<R, T> responseHandlerCallback, Class<T> bodyType) {
         T responseBody;
         if (CloudPlatformType.CLOUD_FOUNDRY.equals(commonClientWrapperEntity.getCloudPlatformType())) {
             ResponseEntity<T> initialResponseEntity = executeGetRequestReturningTextBody(commonClientWrapperEntity, path, bodyType);
@@ -70,11 +72,35 @@ public class CommonClientWrapper {
         return response;
     }
 
-    public String retrieveToken(CommonClientWrapperEntity commonClientWrapperEntity, RestTemplate restTemplate) {
+    public <R> R executeMethod(CommonClientWrapperEntity commonClientWrapperEntity, String pathForMainRequest, ResponseHandlerCallbackForCrudMethods<R> responseHandlerCallback) {
+        return executeMethod(commonClientWrapperEntity, "/itspaces/api/1.0/user", pathForMainRequest, responseHandlerCallback);
+    }
+
+    public <R> R executeMethod(CommonClientWrapperEntity commonClientWrapperEntity, String pathForToken, String pathForMainRequest, ResponseHandlerCallbackForCrudMethods<R> responseHandlerCallback) {
+        try {
+            if (CloudPlatformType.CLOUD_FOUNDRY.equals(commonClientWrapperEntity.getCloudPlatformType())) {
+                RestTemplateWrapper restTemplateWrapper = RestTemplateWrapperHelper.getOrCreateRestTemplateWrapperSingleton(commonClientWrapperEntity.getRestTemplateWrapperKey());
+                String token = retrieveToken(commonClientWrapperEntity, restTemplateWrapper.getRestTemplate(), pathForToken);
+                String url = buildUrl(commonClientWrapperEntity, pathForMainRequest);
+                return responseHandlerCallback.apply(url, token, RestTemplateWrapperHelper.getOrCreateRestTemplateWrapperSingleton(commonClientWrapperEntity.getRestTemplateWrapperKey()));
+            } else {
+                ConnectionProperties connectionProperties = commonClientWrapperEntity.getConnectionProperties();
+                RestTemplateWrapper restTemplateWrapper = RestTemplateWrapperHelper.createRestTemplateWrapper(new BasicAuthenticationInterceptor(connectionProperties.getUsername(), connectionProperties.getPassword()));
+                String token = retrieveToken(commonClientWrapperEntity, restTemplateWrapper.getRestTemplate(), pathForToken);
+                String url = buildUrl(commonClientWrapperEntity, pathForMainRequest);
+                return responseHandlerCallback.apply(url, token, restTemplateWrapper);
+            }
+        } catch (Exception ex) {
+            log.error("Can't executeMethod: ", ex);
+            throw new ClientIntegrationException(ex);
+        }
+    }
+
+    private String retrieveToken(CommonClientWrapperEntity commonClientWrapperEntity, RestTemplate restTemplate) {
         return retrieveToken(commonClientWrapperEntity, restTemplate, "/itspaces/api/1.0/user");
     }
 
-    public String retrieveToken(CommonClientWrapperEntity commonClientWrapperEntity, RestTemplate restTemplate, String path) {
+    private String retrieveToken(CommonClientWrapperEntity commonClientWrapperEntity, RestTemplate restTemplate, String path) {
         try {
             ConnectionProperties connectionProperties = commonClientWrapperEntity.getConnectionProperties();
             String url = buildUrl(connectionProperties, path);
@@ -109,19 +135,20 @@ public class CommonClientWrapper {
             String token = responseEntity.getHeaders().getFirst("X-CSRF-Token");
             return token;
         } catch (Exception ex) {
+            log.error("Can't retrieveToken: ", ex);
             throw new ClientIntegrationException(ex);
         }
     }
 
-    protected String buildUrl(CommonClientWrapperEntity commonClientWrapperEntity, String path) {
+    private String buildUrl(CommonClientWrapperEntity commonClientWrapperEntity, String path) {
         return buildUrl(commonClientWrapperEntity.getConnectionProperties(), path);
     }
 
-    protected String buildUrl(ConnectionProperties connectionProperties, String path) {
+    private String buildUrl(ConnectionProperties connectionProperties, String path) {
         return String.format("%s%s", connectionProperties.getUrlRemovingDefaultPortIfNecessary(), path);
     }
 
-    protected RestTemplateWrapper getRestTemplateWrapper(CommonClientWrapperEntity commonClientWrapperEntity) {
+    private RestTemplateWrapper getRestTemplateWrapper(CommonClientWrapperEntity commonClientWrapperEntity) {
         ConnectionProperties connectionProperties = commonClientWrapperEntity.getConnectionProperties();
         RestTemplateWrapper restTemplateWrapper;
         if (CloudPlatformType.CLOUD_FOUNDRY.equals(commonClientWrapperEntity.getCloudPlatformType())) {
@@ -135,7 +162,6 @@ public class CommonClientWrapper {
     private <T> ResponseEntity<T> executeGetRequestReturningTextBody(CommonClientWrapperEntity commonClientWrapperEntity, String path, Class<T> bodyType) {
         ConnectionProperties connectionProperties = commonClientWrapperEntity.getConnectionProperties();
         final String url = buildUrl(connectionProperties, path);
-        System.out.println("url = " + url);
         try {
             RequestEntity requestEntity = new RequestEntity(HttpMethod.GET, new URI(url));
             RestTemplateWrapper restTemplateWrapper = RestTemplateWrapperHelper.getOrCreateRestTemplateWrapperSingleton(commonClientWrapperEntity.getRestTemplateWrapperKey());
