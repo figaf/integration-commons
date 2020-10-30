@@ -8,7 +8,6 @@ import org.apache.http.conn.ssl.SSLConnectionSocketFactory;
 import org.apache.http.impl.client.HttpClientBuilder;
 import org.apache.http.impl.client.HttpClients;
 import org.apache.http.impl.conn.SystemDefaultRoutePlanner;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
 import org.springframework.http.client.support.BasicAuthenticationInterceptor;
 import org.springframework.http.converter.StringHttpMessageConverter;
@@ -36,10 +35,10 @@ public class HttpClientsFactory {
     }
 
     public HttpClientsFactory(
-        @Value("${irt.use-proxy-for-connections:true}") boolean useProxyForConnections,
-        @Value("${irt.config.http-client.connection-request-timeout:300000}") int connectionRequestTimeout,
-        @Value("${irt.config.http-client.connect-timeout:300000}") int connectTimeout,
-        @Value("${irt.config.http-client.socket-timeout:300000}") int socketTimeout
+        boolean useProxyForConnections,
+        int connectionRequestTimeout,
+        int connectTimeout,
+        int socketTimeout
     ) {
         log.info("useProxyForConnections = {}", useProxyForConnections);
         this.useProxyForConnections = useProxyForConnections;

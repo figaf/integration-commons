@@ -1,4 +1,4 @@
-package com.figaf.integration.common.client.wrapper;
+package com.figaf.integration.common.client;
 
 import com.figaf.integration.common.entity.*;
 import com.figaf.integration.common.exception.ClientIntegrationException;
@@ -31,7 +31,7 @@ import java.util.regex.Pattern;
  */
 @Slf4j
 @AllArgsConstructor
-public class CommonClientWrapper {
+public class BaseClient {
 
     private final static int MAX_NUMBER_OF_AUTH_ATTEMPTS = 4;
     private final static Pattern LOCATION_URL_PATTERN = Pattern.compile(".*location=\"(.*)\"<\\/script>.*");
@@ -48,17 +48,17 @@ public class CommonClientWrapper {
         R apply(String url, String token, RestTemplateWrapper restTemplateWrapper);
     }
 
-    public <R> R executeGet(CommonClientWrapperEntity commonClientWrapperEntity, String path, ResponseHandlerCallbackForReadMethods<R, String> responseHandlerCallback) {
-        return executeGet(commonClientWrapperEntity, path, responseHandlerCallback, String.class);
+    public <R> R executeGet(RequestContext requestContext, String path, ResponseHandlerCallbackForReadMethods<R, String> responseHandlerCallback) {
+        return executeGet(requestContext, path, responseHandlerCallback, String.class);
     }
 
-    public <R, T> R executeGet(CommonClientWrapperEntity commonClientWrapperEntity, String path, ResponseHandlerCallbackForReadMethods<R, T> responseHandlerCallback, Class<T> bodyType) {
+    public <R, T> R executeGet(RequestContext requestContext, String path, ResponseHandlerCallbackForReadMethods<R, T> responseHandlerCallback, Class<T> bodyType) {
         T responseBody;
-        if (CloudPlatformType.CLOUD_FOUNDRY.equals(commonClientWrapperEntity.getCloudPlatformType())) {
-            ResponseEntity<T> initialResponseEntity = executeGetRequestReturningTextBody(commonClientWrapperEntity, path, bodyType);
-            responseBody = makeAuthRequestsAndReturnNeededBody(commonClientWrapperEntity, path, initialResponseEntity, bodyType);
+        if (CloudPlatformType.CLOUD_FOUNDRY.equals(requestContext.getCloudPlatformType())) {
+            ResponseEntity<T> initialResponseEntity = executeGetRequestReturningTextBody(requestContext, path, bodyType);
+            responseBody = makeAuthRequestsAndReturnNeededBody(requestContext, path, initialResponseEntity, bodyType);
         } else {
-            responseBody = executeGetRequestWithBasicAuthReturningTextBody(commonClientWrapperEntity, path, bodyType);
+            responseBody = executeGetRequestWithBasicAuthReturningTextBody(requestContext, path, bodyType);
         }
 
         R response;
@@ -72,22 +72,22 @@ public class CommonClientWrapper {
         return response;
     }
 
-    public <R> R executeMethod(CommonClientWrapperEntity commonClientWrapperEntity, String pathForMainRequest, ResponseHandlerCallbackForCrudMethods<R> responseHandlerCallback) {
-        return executeMethod(commonClientWrapperEntity, "/itspaces/api/1.0/user", pathForMainRequest, responseHandlerCallback);
+    public <R> R executeMethod(RequestContext requestContext, String pathForMainRequest, ResponseHandlerCallbackForCrudMethods<R> responseHandlerCallback) {
+        return executeMethod(requestContext, "/itspaces/api/1.0/user", pathForMainRequest, responseHandlerCallback);
     }
 
-    public <R> R executeMethod(CommonClientWrapperEntity commonClientWrapperEntity, String pathForToken, String pathForMainRequest, ResponseHandlerCallbackForCrudMethods<R> responseHandlerCallback) {
+    public <R> R executeMethod(RequestContext requestContext, String pathForToken, String pathForMainRequest, ResponseHandlerCallbackForCrudMethods<R> responseHandlerCallback) {
         try {
-            if (CloudPlatformType.CLOUD_FOUNDRY.equals(commonClientWrapperEntity.getCloudPlatformType())) {
-                RestTemplateWrapper restTemplateWrapper = RestTemplateWrapperHelper.getOrCreateRestTemplateWrapperSingleton(commonClientWrapperEntity.getRestTemplateWrapperKey());
-                String token = retrieveToken(commonClientWrapperEntity, restTemplateWrapper.getRestTemplate(), pathForToken);
-                String url = buildUrl(commonClientWrapperEntity, pathForMainRequest);
-                return responseHandlerCallback.apply(url, token, RestTemplateWrapperHelper.getOrCreateRestTemplateWrapperSingleton(commonClientWrapperEntity.getRestTemplateWrapperKey()));
+            if (CloudPlatformType.CLOUD_FOUNDRY.equals(requestContext.getCloudPlatformType())) {
+                RestTemplateWrapper restTemplateWrapper = RestTemplateWrapperHelper.getOrCreateRestTemplateWrapperSingleton(requestContext.getRestTemplateWrapperKey());
+                String token = retrieveToken(requestContext, restTemplateWrapper.getRestTemplate(), pathForToken);
+                String url = buildUrl(requestContext, pathForMainRequest);
+                return responseHandlerCallback.apply(url, token, RestTemplateWrapperHelper.getOrCreateRestTemplateWrapperSingleton(requestContext.getRestTemplateWrapperKey()));
             } else {
-                ConnectionProperties connectionProperties = commonClientWrapperEntity.getConnectionProperties();
+                ConnectionProperties connectionProperties = requestContext.getConnectionProperties();
                 RestTemplateWrapper restTemplateWrapper = RestTemplateWrapperHelper.createRestTemplateWrapper(new BasicAuthenticationInterceptor(connectionProperties.getUsername(), connectionProperties.getPassword()));
-                String token = retrieveToken(commonClientWrapperEntity, restTemplateWrapper.getRestTemplate(), pathForToken);
-                String url = buildUrl(commonClientWrapperEntity, pathForMainRequest);
+                String token = retrieveToken(requestContext, restTemplateWrapper.getRestTemplate(), pathForToken);
+                String url = buildUrl(requestContext, pathForMainRequest);
                 return responseHandlerCallback.apply(url, token, restTemplateWrapper);
             }
         } catch (Exception ex) {
@@ -96,22 +96,22 @@ public class CommonClientWrapper {
         }
     }
 
-    private String retrieveToken(CommonClientWrapperEntity commonClientWrapperEntity, RestTemplate restTemplate) {
-        return retrieveToken(commonClientWrapperEntity, restTemplate, "/itspaces/api/1.0/user");
+    private String retrieveToken(RequestContext requestContext, RestTemplate restTemplate) {
+        return retrieveToken(requestContext, restTemplate, "/itspaces/api/1.0/user");
     }
 
-    private String retrieveToken(CommonClientWrapperEntity commonClientWrapperEntity, RestTemplate restTemplate, String path) {
+    private String retrieveToken(RequestContext requestContext, RestTemplate restTemplate, String path) {
         try {
-            ConnectionProperties connectionProperties = commonClientWrapperEntity.getConnectionProperties();
+            ConnectionProperties connectionProperties = requestContext.getConnectionProperties();
             String url = buildUrl(connectionProperties, path);
             ResponseEntity<String> responseEntity;
             HttpHeaders httpHeaders = new HttpHeaders();
             httpHeaders.add("X-CSRF-Token", "Fetch");
-            if (CloudPlatformType.CLOUD_FOUNDRY.equals(commonClientWrapperEntity.getCloudPlatformType())) {
+            if (CloudPlatformType.CLOUD_FOUNDRY.equals(requestContext.getCloudPlatformType())) {
                 RequestEntity requestEntity = new RequestEntity(httpHeaders, HttpMethod.GET, new URI(url));
                 ResponseEntity<String> initialResponseEntity = restTemplate.exchange(requestEntity, String.class);
                 if (!HttpStatus.OK.equals(initialResponseEntity.getStatusCode()) || initialResponseEntity.getBody() != null) {
-                    responseEntity = makeAuthRequestsAndReturnResponseEntity(commonClientWrapperEntity, path, initialResponseEntity, httpHeaders, String.class, 1);
+                    responseEntity = makeAuthRequestsAndReturnResponseEntity(requestContext, path, initialResponseEntity, httpHeaders, String.class, 1);
                 } else {
                     responseEntity = initialResponseEntity;
                 }
@@ -140,31 +140,31 @@ public class CommonClientWrapper {
         }
     }
 
-    private String buildUrl(CommonClientWrapperEntity commonClientWrapperEntity, String path) {
-        return buildUrl(commonClientWrapperEntity.getConnectionProperties(), path);
+    private String buildUrl(RequestContext requestContext, String path) {
+        return buildUrl(requestContext.getConnectionProperties(), path);
     }
 
     private String buildUrl(ConnectionProperties connectionProperties, String path) {
         return String.format("%s%s", connectionProperties.getUrlRemovingDefaultPortIfNecessary(), path);
     }
 
-    private RestTemplateWrapper getRestTemplateWrapper(CommonClientWrapperEntity commonClientWrapperEntity) {
-        ConnectionProperties connectionProperties = commonClientWrapperEntity.getConnectionProperties();
+    private RestTemplateWrapper getRestTemplateWrapper(RequestContext requestContext) {
+        ConnectionProperties connectionProperties = requestContext.getConnectionProperties();
         RestTemplateWrapper restTemplateWrapper;
-        if (CloudPlatformType.CLOUD_FOUNDRY.equals(commonClientWrapperEntity.getCloudPlatformType())) {
-            restTemplateWrapper = RestTemplateWrapperHelper.getOrCreateRestTemplateWrapperSingleton(commonClientWrapperEntity.getRestTemplateWrapperKey());
+        if (CloudPlatformType.CLOUD_FOUNDRY.equals(requestContext.getCloudPlatformType())) {
+            restTemplateWrapper = RestTemplateWrapperHelper.getOrCreateRestTemplateWrapperSingleton(requestContext.getRestTemplateWrapperKey());
         } else {
             restTemplateWrapper = RestTemplateWrapperHelper.createRestTemplateWrapper(new BasicAuthenticationInterceptor(connectionProperties.getUsername(), connectionProperties.getPassword()));
         }
         return restTemplateWrapper;
     }
 
-    private <T> ResponseEntity<T> executeGetRequestReturningTextBody(CommonClientWrapperEntity commonClientWrapperEntity, String path, Class<T> bodyType) {
-        ConnectionProperties connectionProperties = commonClientWrapperEntity.getConnectionProperties();
+    private <T> ResponseEntity<T> executeGetRequestReturningTextBody(RequestContext requestContext, String path, Class<T> bodyType) {
+        ConnectionProperties connectionProperties = requestContext.getConnectionProperties();
         final String url = buildUrl(connectionProperties, path);
         try {
             RequestEntity requestEntity = new RequestEntity(HttpMethod.GET, new URI(url));
-            RestTemplateWrapper restTemplateWrapper = RestTemplateWrapperHelper.getOrCreateRestTemplateWrapperSingleton(commonClientWrapperEntity.getRestTemplateWrapperKey());
+            RestTemplateWrapper restTemplateWrapper = RestTemplateWrapperHelper.getOrCreateRestTemplateWrapperSingleton(requestContext.getRestTemplateWrapperKey());
             ResponseEntity<T> responseEntity = restTemplateWrapper.getRestTemplate().exchange(requestEntity, bodyType);
             return responseEntity;
         } catch (Exception ex) {
@@ -174,8 +174,8 @@ public class CommonClientWrapper {
         }
     }
 
-    private <T> T executeGetRequestWithBasicAuthReturningTextBody(CommonClientWrapperEntity commonClientWrapperEntity, String path, Class<T> bodyType) {
-        ConnectionProperties connectionProperties = commonClientWrapperEntity.getConnectionProperties();
+    private <T> T executeGetRequestWithBasicAuthReturningTextBody(RequestContext requestContext, String path, Class<T> bodyType) {
+        ConnectionProperties connectionProperties = requestContext.getConnectionProperties();
         final String url = buildUrl(connectionProperties, path);
         try {
             RestTemplate restTemplateWithBasicAuth = RestTemplateWrapperHelper.createRestTemplate(new BasicAuthenticationInterceptor(connectionProperties.getUsername(), connectionProperties.getPassword()));
@@ -189,13 +189,13 @@ public class CommonClientWrapper {
         }
     }
 
-    private <T> T makeAuthRequestsAndReturnNeededBody(CommonClientWrapperEntity commonClientWrapperEntity, String path, ResponseEntity<T> initialResponseEntity, Class<T> responseType) {
-        ResponseEntity<T> responseEntity = makeAuthRequestsAndReturnResponseEntity(commonClientWrapperEntity, path, initialResponseEntity, null, responseType, 1);
+    private <T> T makeAuthRequestsAndReturnNeededBody(RequestContext requestContext, String path, ResponseEntity<T> initialResponseEntity, Class<T> responseType) {
+        ResponseEntity<T> responseEntity = makeAuthRequestsAndReturnResponseEntity(requestContext, path, initialResponseEntity, null, responseType, 1);
         return responseEntity.getBody();
     }
 
     private <T> ResponseEntity<T> makeAuthRequestsAndReturnResponseEntity(
-            CommonClientWrapperEntity commonClientWrapperEntity,
+            RequestContext requestContext,
             String path,
             ResponseEntity<T> initialResponseEntity,
             HttpHeaders additionalHeaders,
@@ -212,27 +212,25 @@ public class CommonClientWrapper {
 
             String signature = retrieveSignature(responseBodyString);
 
-            String commonClientWrapperEntityId = commonClientWrapperEntity.getRestTemplateWrapperKey();
+            String restTemplateWrapperKey = requestContext.getRestTemplateWrapperKey();
+            String loginPageUrl = getLoginPageUrlFromAuthorizationPage(restTemplateWrapperKey, authorizationUrl);
+            String loginPageContent = getLoginPageContent(restTemplateWrapperKey, loginPageUrl);
 
-            String loginPageUrl = getLoginPageUrlFromAuthorizationPage(commonClientWrapperEntityId, authorizationUrl);
+            MultiValueMap<String, String> loginFormData = buildLoginFormData(requestContext, loginPageContent);
+            String redirectUrlReceivedAfterSuccessfulAuthorization = authorize(restTemplateWrapperKey, loginFormData);
 
-            String loginPageContent = getLoginPageContent(commonClientWrapperEntityId, loginPageUrl);
-
-            MultiValueMap<String, String> loginFormData = buildLoginFormData(commonClientWrapperEntity, loginPageContent);
-            String redirectUrlReceivedAfterSuccessfulAuthorization = authorize(commonClientWrapperEntityId, loginFormData);
-
-            ResponseEntity<T> result = executeRedirectRequestAfterSuccessfulAuthorization(commonClientWrapperEntityId, redirectUrlReceivedAfterSuccessfulAuthorization, path, signature, additionalHeaders, responseType);
+            ResponseEntity<T> result = executeRedirectRequestAfterSuccessfulAuthorization(restTemplateWrapperKey, redirectUrlReceivedAfterSuccessfulAuthorization, path, signature, additionalHeaders, responseType);
 
             log.debug("number of attempts = {}", numberOfAttempts);
 
             return result;
         } catch (HttpClientErrorException ex) {
             //sometimes authorization requests fail due to unclear reason. That's why we need to do another attempt.
-            if ((HttpStatus.BAD_REQUEST.equals(ex.getStatusCode()) || HttpStatus.INTERNAL_SERVER_ERROR.equals(ex.getStatusCode()) && Platform.API_MANAGEMENT.equals(commonClientWrapperEntity.getPlatform())) &&
+            if ((HttpStatus.BAD_REQUEST.equals(ex.getStatusCode()) || HttpStatus.INTERNAL_SERVER_ERROR.equals(ex.getStatusCode()) && Platform.API_MANAGEMENT.equals(requestContext.getPlatform())) &&
                     numberOfAttempts < MAX_NUMBER_OF_AUTH_ATTEMPTS
             ) {
                 log.warn("HttpClientErrorException occurs: {}, {}", ex.getStatusCode(), ex.getMessage());
-                return makeAuthRequestsAndReturnResponseEntity(commonClientWrapperEntity, path, initialResponseEntity, additionalHeaders, responseType, numberOfAttempts + 1);
+                return makeAuthRequestsAndReturnResponseEntity(requestContext, path, initialResponseEntity, additionalHeaders, responseType, numberOfAttempts + 1);
             } else {
                 throw ex;
             }
@@ -243,19 +241,19 @@ public class CommonClientWrapper {
         }
     }
 
-    private String getLoginPageUrlFromAuthorizationPage(String commonClientWrapperEntityId, String url) throws URISyntaxException {
-        log.debug("#getLoginPageUrlFromAuthorizationPage(String commonClientWrapperEntityId, String url): {}, {}", commonClientWrapperEntityId, url);
+    private String getLoginPageUrlFromAuthorizationPage(String restTemplateWrapperKey, String url) throws URISyntaxException {
+        log.debug("#getLoginPageUrlFromAuthorizationPage(String restTemplateWrapperKey, String url): {}, {}", restTemplateWrapperKey, url);
         HttpHeaders httpHeaders = new HttpHeaders();
         httpHeaders.add("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9");
         RequestEntity requestEntity = new RequestEntity(httpHeaders, HttpMethod.GET, new URI(url));
 
-        RestTemplateWrapper restTemplateWrapper = RestTemplateWrapperHelper.getOrCreateRestTemplateWrapperSingleton(commonClientWrapperEntityId);
+        RestTemplateWrapper restTemplateWrapper = RestTemplateWrapperHelper.getOrCreateRestTemplateWrapperSingleton(restTemplateWrapperKey);
         ResponseEntity<String> responseEntity;
         try {
             responseEntity = restTemplateWrapper.getRestTemplate().exchange(requestEntity, String.class);
         } catch (HttpClientErrorException ex) {
             if (HttpStatus.BAD_REQUEST.equals(ex.getStatusCode())) {
-                restTemplateWrapper = RestTemplateWrapperHelper.createNewRestTemplateWrapper(commonClientWrapperEntityId);
+                restTemplateWrapper = RestTemplateWrapperHelper.createNewRestTemplateWrapper(restTemplateWrapperKey);
                 responseEntity = restTemplateWrapper.getRestTemplate().exchange(requestEntity, String.class);
             } else {
                 throw ex;
@@ -269,19 +267,19 @@ public class CommonClientWrapper {
         return loginPageUrl.replaceAll("amp;", "");
     }
 
-    private String getLoginPageContent(String commonClientWrapperEntityId, String url) throws Exception {
-        log.debug("#getLoginPageContent(String commonClientWrapperEntityId, String url): {}, {}", commonClientWrapperEntityId, url);
+    private String getLoginPageContent(String restTemplateWrapperKey, String url) throws Exception {
+        log.debug("#getLoginPageContent(String restTemplateWrapperKey, String url): {}, {}", restTemplateWrapperKey, url);
         RequestEntity requestEntity = new RequestEntity(HttpMethod.GET, new URI(url));
-        RestTemplateWrapper restTemplateWrapper = RestTemplateWrapperHelper.getOrCreateRestTemplateWrapperSingleton(commonClientWrapperEntityId);
+        RestTemplateWrapper restTemplateWrapper = RestTemplateWrapperHelper.getOrCreateRestTemplateWrapperSingleton(restTemplateWrapperKey);
         ResponseEntity<String> exchange = restTemplateWrapper.getRestTemplate().exchange(requestEntity, String.class);
         return exchange.getBody();
     }
 
-    private String authorize(String commonClientWrapperEntityId, MultiValueMap<String, String> map) {
-        log.debug("#authorize(String commonClientWrapperEntityId, MultiValueMap<String, String> map): {}, ssoUrL: {}", commonClientWrapperEntityId, this.ssoUrl);
+    private String authorize(String restTemplateWrapperKey, MultiValueMap<String, String> map) {
+        log.debug("#authorize(String restTemplateWrapperKey, MultiValueMap<String, String> map): {}, ssoUrL: {}", restTemplateWrapperKey, this.ssoUrl);
         HttpHeaders httpHeaders = new HttpHeaders();
         HttpEntity<MultiValueMap<String, String>> request = new HttpEntity<>(map, httpHeaders);
-        RestTemplateWrapper restTemplateWrapper = RestTemplateWrapperHelper.getOrCreateRestTemplateWrapperSingleton(commonClientWrapperEntityId);
+        RestTemplateWrapper restTemplateWrapper = RestTemplateWrapperHelper.getOrCreateRestTemplateWrapperSingleton(restTemplateWrapperKey);
         ResponseEntity<String> response = restTemplateWrapper.getRestTemplate().postForEntity(this.ssoUrl, request, String.class);
         String responseBody = response.getBody();
         if (StringUtils.contains(responseBody, "Sorry, we could not authenticate you")) {
@@ -290,9 +288,9 @@ public class CommonClientWrapper {
         return response.getHeaders().getFirst("Location");
     }
 
-    private <T> ResponseEntity<T> executeRedirectRequestAfterSuccessfulAuthorization(String commonClientWrapperEntityId, String url, String initialPath, String signature, HttpHeaders additionalHeaders, Class<T> responseType) throws Exception {
-        log.debug("#executeRedirectRequestAfterSuccessfulAuthorization(String commonClientWrapperEntityId, String url, String initialPath, String signature, HttpHeaders additionalHeaders, Class<T> responseType): {}, {}, {}, {}, {}, {}",
-                commonClientWrapperEntityId, url, initialPath, signature, additionalHeaders, responseType
+    private <T> ResponseEntity<T> executeRedirectRequestAfterSuccessfulAuthorization(String restTemplateWrapperKey, String url, String initialPath, String signature, HttpHeaders additionalHeaders, Class<T> responseType) throws Exception {
+        log.debug("#executeRedirectRequestAfterSuccessfulAuthorization(String restTemplateWrapperKey, String url, String initialPath, String signature, HttpHeaders additionalHeaders, Class<T> responseType): {}, {}, {}, {}, {}, {}",
+                restTemplateWrapperKey, url, initialPath, signature, additionalHeaders, responseType
         );
 
         String cookie = String.format("fragmentAfterLogin=; locationAfterLogin=%s; signature=%s", URLEncoder.encode(initialPath, "UTF-8"), signature);
@@ -303,7 +301,7 @@ public class CommonClientWrapper {
         }
 
         RequestEntity requestEntity = new RequestEntity(headers, HttpMethod.GET, new URI(url));
-        RestTemplateWrapper restTemplateWrapper = RestTemplateWrapperHelper.getOrCreateRestTemplateWrapperSingleton(commonClientWrapperEntityId);
+        RestTemplateWrapper restTemplateWrapper = RestTemplateWrapperHelper.getOrCreateRestTemplateWrapperSingleton(restTemplateWrapperKey);
         ResponseEntity<T> responseEntity = restTemplateWrapper.getRestTemplate().exchange(requestEntity, responseType);
         return responseEntity;
     }
@@ -342,8 +340,8 @@ public class CommonClientWrapper {
         return foundGroup;
     }
 
-    private MultiValueMap<String, String> buildLoginFormData(CommonClientWrapperEntity commonClientWrapperEntity, String html) {
-        ConnectionProperties connectionProperties = commonClientWrapperEntity.getConnectionProperties();
+    private MultiValueMap<String, String> buildLoginFormData(RequestContext requestContext, String html) {
+        ConnectionProperties connectionProperties = requestContext.getConnectionProperties();
         Map<String, String> loginFormData = new HashMap<>();
         loginFormData.put("j_username", connectionProperties.getUsername());
         loginFormData.put("j_password", connectionProperties.getPassword());
