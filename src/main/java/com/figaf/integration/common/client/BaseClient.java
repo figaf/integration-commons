@@ -1,6 +1,9 @@
 package com.figaf.integration.common.client;
 
-import com.figaf.integration.common.entity.*;
+import com.figaf.integration.common.entity.CloudPlatformType;
+import com.figaf.integration.common.entity.ConnectionProperties;
+import com.figaf.integration.common.entity.RequestContext;
+import com.figaf.integration.common.entity.RestTemplateWrapper;
 import com.figaf.integration.common.exception.ClientIntegrationException;
 import com.figaf.integration.common.utils.RestTemplateWrapperHelper;
 import lombok.AllArgsConstructor;
@@ -14,7 +17,7 @@ import org.springframework.http.*;
 import org.springframework.http.client.support.BasicAuthenticationInterceptor;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
-import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.RestTemplate;
 
 import java.net.URI;
@@ -56,7 +59,7 @@ public class BaseClient {
         T responseBody;
         if (CloudPlatformType.CLOUD_FOUNDRY.equals(requestContext.getCloudPlatformType())) {
             ResponseEntity<T> initialResponseEntity = executeGetRequestReturningTextBody(requestContext, path, bodyType);
-            responseBody = makeAuthRequestsAndReturnNeededBody(requestContext, path, initialResponseEntity, bodyType);
+            responseBody = makeAuthRequestsIfNecessaryAndReturnNeededBody(requestContext, path, initialResponseEntity, bodyType);
         } else {
             responseBody = executeGetRequestWithBasicAuthReturningTextBody(requestContext, path, bodyType);
         }
@@ -111,7 +114,7 @@ public class BaseClient {
                 RequestEntity requestEntity = new RequestEntity(httpHeaders, HttpMethod.GET, new URI(url));
                 ResponseEntity<String> initialResponseEntity = restTemplate.exchange(requestEntity, String.class);
                 if (!HttpStatus.OK.equals(initialResponseEntity.getStatusCode()) || initialResponseEntity.getBody() != null) {
-                    responseEntity = makeAuthRequestsAndReturnResponseEntity(requestContext, path, initialResponseEntity, httpHeaders, String.class, 1);
+                    responseEntity = makeAuthRequestsIfNecessaryAndReturnResponseEntity(requestContext, path, initialResponseEntity, httpHeaders, String.class, 1);
                 } else {
                     responseEntity = initialResponseEntity;
                 }
@@ -189,12 +192,19 @@ public class BaseClient {
         }
     }
 
-    private <T> T makeAuthRequestsAndReturnNeededBody(RequestContext requestContext, String path, ResponseEntity<T> initialResponseEntity, Class<T> responseType) {
-        ResponseEntity<T> responseEntity = makeAuthRequestsAndReturnResponseEntity(requestContext, path, initialResponseEntity, null, responseType, 1);
+    private <T> T makeAuthRequestsIfNecessaryAndReturnNeededBody(RequestContext requestContext, String path, ResponseEntity<T> initialResponseEntity, Class<T> responseType) {
+        ResponseEntity<T> responseEntity = makeAuthRequestsIfNecessaryAndReturnResponseEntity(
+                requestContext,
+                path,
+                initialResponseEntity,
+                null,
+                responseType,
+                1
+        );
         return responseEntity.getBody();
     }
 
-    private <T> ResponseEntity<T> makeAuthRequestsAndReturnResponseEntity(
+    private <T> ResponseEntity<T> makeAuthRequestsIfNecessaryAndReturnResponseEntity(
             RequestContext requestContext,
             String path,
             ResponseEntity<T> initialResponseEntity,
@@ -210,6 +220,40 @@ public class BaseClient {
                 return initialResponseEntity;
             }
 
+            ResponseEntity<T> responseEntity = makeAuthRequests(requestContext, path, additionalHeaders, responseType, responseBodyString, authorizationUrl);
+
+            log.debug("number of attempts = {}", numberOfAttempts);
+
+            return responseEntity;
+        } catch (HttpStatusCodeException ex) {
+            //sometimes authorization requests fail due to unclear reason. That's why we need to do another attempt.
+            if ((HttpStatus.BAD_REQUEST.equals(ex.getStatusCode()) || HttpStatus.INTERNAL_SERVER_ERROR.equals(ex.getStatusCode())) &&
+                    numberOfAttempts < MAX_NUMBER_OF_AUTH_ATTEMPTS
+            ) {
+                log.warn("HttpStatusCodeException occurs: {}, {}", ex.getStatusCode(), ex.getMessage());
+                return makeAuthRequestsIfNecessaryAndReturnResponseEntity(requestContext, path, initialResponseEntity, additionalHeaders, responseType, numberOfAttempts + 1);
+            } else {
+                throw ex;
+            }
+        } catch (Exception ex) {
+            String errorMessage = String.format("Can't authorize and execute initial request on %s", path);
+            log.error(errorMessage, ex);
+            throw new ClientIntegrationException(errorMessage, ex);
+        }
+    }
+
+    private <T> ResponseEntity<T> makeAuthRequests(
+            RequestContext requestContext,
+            String path,
+            HttpHeaders additionalHeaders,
+            Class<T> responseType,
+            String responseBodyString,
+            String authorizationUrl
+    ) throws Exception {
+
+        //IRT-1891 we need to do this because parallel authorizations cause serious problems
+        synchronized (requestContext.getRestTemplateWrapperKey().intern()) {
+
             String signature = retrieveSignature(responseBodyString);
 
             String restTemplateWrapperKey = requestContext.getRestTemplateWrapperKey();
@@ -219,25 +263,15 @@ public class BaseClient {
             MultiValueMap<String, String> loginFormData = buildLoginFormData(requestContext, loginPageContent);
             String redirectUrlReceivedAfterSuccessfulAuthorization = authorize(restTemplateWrapperKey, loginFormData);
 
-            ResponseEntity<T> result = executeRedirectRequestAfterSuccessfulAuthorization(restTemplateWrapperKey, redirectUrlReceivedAfterSuccessfulAuthorization, path, signature, additionalHeaders, responseType);
+            return executeRedirectRequestAfterSuccessfulAuthorization(
+                    restTemplateWrapperKey,
+                    redirectUrlReceivedAfterSuccessfulAuthorization,
+                    path,
+                    signature,
+                    additionalHeaders,
+                    responseType
+            );
 
-            log.debug("number of attempts = {}", numberOfAttempts);
-
-            return result;
-        } catch (HttpClientErrorException ex) {
-            //sometimes authorization requests fail due to unclear reason. That's why we need to do another attempt.
-            if ((HttpStatus.BAD_REQUEST.equals(ex.getStatusCode()) || HttpStatus.INTERNAL_SERVER_ERROR.equals(ex.getStatusCode()) && Platform.API_MANAGEMENT.equals(requestContext.getPlatform())) &&
-                    numberOfAttempts < MAX_NUMBER_OF_AUTH_ATTEMPTS
-            ) {
-                log.warn("HttpClientErrorException occurs: {}, {}", ex.getStatusCode(), ex.getMessage());
-                return makeAuthRequestsAndReturnResponseEntity(requestContext, path, initialResponseEntity, additionalHeaders, responseType, numberOfAttempts + 1);
-            } else {
-                throw ex;
-            }
-        } catch (Exception ex) {
-            String errorMessage = String.format("Can't authorize and execute initial request on %s", path);
-            log.error(errorMessage, ex);
-            throw new ClientIntegrationException(errorMessage, ex);
         }
     }
 
@@ -251,7 +285,7 @@ public class BaseClient {
         ResponseEntity<String> responseEntity;
         try {
             responseEntity = restTemplateWrapper.getRestTemplate().exchange(requestEntity, String.class);
-        } catch (HttpClientErrorException ex) {
+        } catch (HttpStatusCodeException ex) {
             if (HttpStatus.BAD_REQUEST.equals(ex.getStatusCode())) {
                 restTemplateWrapper = RestTemplateWrapperHelper.createNewRestTemplateWrapper(restTemplateWrapperKey);
                 responseEntity = restTemplateWrapper.getRestTemplate().exchange(requestEntity, String.class);
