@@ -12,8 +12,8 @@ import org.springframework.http.converter.StringHttpMessageConverter;
 import org.springframework.web.client.RestTemplate;
 
 import java.nio.charset.StandardCharsets;
-import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * @author Arsenii Istlentev
@@ -21,7 +21,7 @@ import java.util.Map;
 @Slf4j
 public class RestTemplateWrapperHelper {
 
-    private static Map<String, RestTemplateWrapper> keyToRestTemplateWrapperMap = new HashMap<>();
+    private static Map<String, RestTemplateWrapper> keyToRestTemplateWrapperMap = new ConcurrentHashMap<>();
 
     public static HttpClientBuilder getHttpClientBuilder() {
         HttpClientBuilder httpClientBuilder = HttpClients.custom();

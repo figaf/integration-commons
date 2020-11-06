@@ -61,4 +61,11 @@ public class RequestContext {
                 restTemplateWrapperKey
         );
     }
+
+    public String getRestTemplateWrapperKey() {
+        if (restTemplateWrapperKey == null) {
+            restTemplateWrapperKey = "";
+        }
+        return restTemplateWrapperKey;
+    }
 }
