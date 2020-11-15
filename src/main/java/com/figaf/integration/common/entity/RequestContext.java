@@ -62,6 +62,15 @@ public class RequestContext {
         );
     }
 
+    public static RequestContext apiHub(ConnectionProperties connectionProperties) {
+        return new RequestContext(
+                connectionProperties,
+                null,
+                Platform.API_HUB,
+                null
+        );
+    }
+
     public String getRestTemplateWrapperKey() {
         if (restTemplateWrapperKey == null) {
             restTemplateWrapperKey = "";
