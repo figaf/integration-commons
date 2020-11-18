@@ -7,5 +7,6 @@ public enum Platform {
 
     CPI,
     PRO,
-    API_MANAGEMENT
+    API_MANAGEMENT,
+    API_HUB
 }
