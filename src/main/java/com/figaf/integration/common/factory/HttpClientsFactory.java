@@ -1,6 +1,8 @@
 package com.figaf.integration.common.factory;
 
 import com.github.markusbernhardt.proxy.ProxySearch;
+import lombok.Getter;
+import lombok.ToString;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.http.client.HttpClient;
 import org.apache.http.client.config.RequestConfig;
@@ -20,6 +22,8 @@ import java.nio.charset.StandardCharsets;
  * @author Arsenii Istlentev
  */
 @Slf4j
+@Getter
+@ToString
 public class HttpClientsFactory {
 
     private final boolean useProxyForConnections;
