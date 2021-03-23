@@ -4,7 +4,7 @@ plugins {
 }
 
 group = 'com.github.figaf'
-version = '1.3'
+version = '1.4'
 
 repositories {
     mavenLocal()
