@@ -19,9 +19,7 @@ import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.RestTemplate;
 
-import java.net.URI;
-import java.net.URISyntaxException;
-import java.net.URLEncoder;
+import java.net.*;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
@@ -38,6 +36,7 @@ public class BaseClient {
     private final static Pattern LOCATION_URL_PATTERN = Pattern.compile(".*location=\"(.*)\"<\\/script>.*");
     private final static Pattern SIGNATURE_PATTERN = Pattern.compile(".*signature=(.*);path.*");
     private final static Pattern LOGIN_URL_PATTERN = Pattern.compile(".*<meta name=\"redirect\"[\\s\\S]*content=\"(.*)\">");
+    private final static Pattern PWD_FORM_PATTERN = Pattern.compile("<form id=\"PwdForm\" action=\"([^\"]*)\".*name=\"X-Uaa-Csrf\" value=\"([^\"]*)\"");
 
     private final String ssoUrl;
     protected final HttpClientsFactory httpClientsFactory;
@@ -264,11 +263,28 @@ public class BaseClient {
             String signature = retrieveSignature(responseBodyString);
 
             String restTemplateWrapperKey = requestContext.getRestTemplateWrapperKey();
-            String loginPageUrl = getLoginPageUrlFromAuthorizationPage(restTemplateWrapperKey, authorizationUrl);
-            String loginPageContent = getLoginPageContent(restTemplateWrapperKey, loginPageUrl);
+            String authorizationPageContent = getAuthorizationPageContent(restTemplateWrapperKey, authorizationUrl);
+            String redirectUrlReceivedAfterSuccessfulAuthorization;
+            String loginPageUrl = getLoginPageUrlFromAuthorizationPage(authorizationPageContent);
+            if (loginPageUrl != null) {
+                String loginPageContent = getLoginPageContent(restTemplateWrapperKey, loginPageUrl);
+                MultiValueMap<String, String> loginFormData = buildLoginFormDataForSso(requestContext, loginPageContent);
+                redirectUrlReceivedAfterSuccessfulAuthorization = authorize(restTemplateWrapperKey, loginFormData, this.ssoUrl);
+            } else {
+                Matcher matcher = PWD_FORM_PATTERN.matcher(authorizationPageContent);
+                String loginDoPath;
+                String csrfToken;
+                if (matcher.find()) {
+                    loginDoPath = matcher.group(1);
+                    csrfToken = matcher.group(2);
+                } else {
+                    throw new ClientIntegrationException(String.format("Can't retrieve login page url or login form data from %s", authorizationPageContent));
+                }
 
-            MultiValueMap<String, String> loginFormData = buildLoginFormData(requestContext, loginPageContent);
-            String redirectUrlReceivedAfterSuccessfulAuthorization = authorize(restTemplateWrapperKey, loginFormData);
+                MultiValueMap<String, String> loginFormData = buildLoginFormData(requestContext, csrfToken);
+                String loginUrl = buildLoginUrl(authorizationUrl, loginDoPath);
+                redirectUrlReceivedAfterSuccessfulAuthorization = authorize(restTemplateWrapperKey, loginFormData, loginUrl);
+            }
 
             return executeRedirectRequestAfterSuccessfulAuthorization(
                     restTemplateWrapperKey,
@@ -282,8 +298,8 @@ public class BaseClient {
         }
     }
 
-    private String getLoginPageUrlFromAuthorizationPage(String restTemplateWrapperKey, String url) throws URISyntaxException {
-        log.debug("#getLoginPageUrlFromAuthorizationPage(String restTemplateWrapperKey, String url): {}, {}", restTemplateWrapperKey, url);
+    private String getAuthorizationPageContent(String restTemplateWrapperKey, String url) throws URISyntaxException {
+        log.debug("#getAuthorizationPageContent(String restTemplateWrapperKey, String url): {}, {}", restTemplateWrapperKey, url);
         HttpHeaders httpHeaders = new HttpHeaders();
         httpHeaders.add("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9");
         RequestEntity requestEntity = new RequestEntity(httpHeaders, HttpMethod.GET, new URI(url));
@@ -300,12 +316,14 @@ public class BaseClient {
                 throw ex;
             }
         }
-        String loginPageUrl = retrieveLoginPageUrl(responseEntity.getBody());
-        if (loginPageUrl == null) {
-            throw new ClientIntegrationException(String.format("Can't retrieve login page url from %s", responseEntity.getBody()));
-        }
 
-        return loginPageUrl.replaceAll("amp;", "");
+        return responseEntity.getBody();
+    }
+
+    private String getLoginPageUrlFromAuthorizationPage(String authorizationPageContent) {
+        log.debug("#getLoginPageUrlFromAuthorizationPage(String authorizationPageContent)");
+        String loginPageUrl = retrieveLoginPageUrl(authorizationPageContent);
+        return loginPageUrl != null ? loginPageUrl.replaceAll("amp;", "") : null;
     }
 
     private String getLoginPageContent(String restTemplateWrapperKey, String url) throws Exception {
@@ -316,12 +334,12 @@ public class BaseClient {
         return exchange.getBody();
     }
 
-    private String authorize(String restTemplateWrapperKey, MultiValueMap<String, String> map) {
-        log.debug("#authorize(String restTemplateWrapperKey, MultiValueMap<String, String> map): {}, ssoUrL: {}", restTemplateWrapperKey, this.ssoUrl);
+    private String authorize(String restTemplateWrapperKey, MultiValueMap<String, String> map, String loginUrl) {
+        log.debug("#authorize(String restTemplateWrapperKey, MultiValueMap<String, String> map, String loginUrl): {}, {}", restTemplateWrapperKey, loginUrl);
         HttpHeaders httpHeaders = new HttpHeaders();
         HttpEntity<MultiValueMap<String, String>> request = new HttpEntity<>(map, httpHeaders);
         RestTemplateWrapper restTemplateWrapper = restTemplateWrapperHelper.getOrCreateRestTemplateWrapperSingleton(restTemplateWrapperKey);
-        ResponseEntity<String> response = restTemplateWrapper.getRestTemplate().postForEntity(this.ssoUrl, request, String.class);
+        ResponseEntity<String> response = restTemplateWrapper.getRestTemplate().postForEntity(loginUrl, request, String.class);
         String responseBody = response.getBody();
         if (StringUtils.contains(responseBody, "Sorry, we could not authenticate you")) {
             throw new ClientIntegrationException("Login/password are not correct");
@@ -381,7 +399,7 @@ public class BaseClient {
         return foundGroup;
     }
 
-    private MultiValueMap<String, String> buildLoginFormData(RequestContext requestContext, String html) {
+    private MultiValueMap<String, String> buildLoginFormDataForSso(RequestContext requestContext, String html) {
         ConnectionProperties connectionProperties = requestContext.getConnectionProperties();
         Map<String, String> loginFormData = new HashMap<>();
         loginFormData.put("j_username", connectionProperties.getUsername());
@@ -405,5 +423,20 @@ public class BaseClient {
         }
         return map;
     }
+
+    private MultiValueMap<String, String> buildLoginFormData(RequestContext requestContext, String csrfToken) {
+        ConnectionProperties connectionProperties = requestContext.getConnectionProperties();
+        MultiValueMap<String, String> loginFormData = new LinkedMultiValueMap<>();
+        loginFormData.add("username", connectionProperties.getUsername());
+        loginFormData.add("password", connectionProperties.getPassword());
+        loginFormData.add("X-Uaa-Csrf", csrfToken);
+        return loginFormData;
+    }
+
+    private String buildLoginUrl(String authorizationUrl, String loginDoPath) throws MalformedURLException {
+        URL url = new URL(authorizationUrl);
+        return String.format("%s://%s/%s", url.getProtocol(), url.getAuthority(), loginDoPath);
+    }
+
 }
 
