@@ -33,9 +33,9 @@ import java.util.regex.Pattern;
 public class BaseClient {
 
     private final static int MAX_NUMBER_OF_AUTH_ATTEMPTS = 4;
-    private final static Pattern LOCATION_URL_PATTERN = Pattern.compile(".*location=\"(.*)\"<\\/script>.*");
-    private final static Pattern SIGNATURE_PATTERN = Pattern.compile(".*signature=(.*);path.*");
-    private final static Pattern LOGIN_URL_PATTERN = Pattern.compile(".*<meta name=\"redirect\"[\\s\\S]*content=\"(.*)\">");
+    private final static Pattern LOCATION_URL_PATTERN = Pattern.compile("location=\"(.*)\"<\\/script>");
+    private final static Pattern SIGNATURE_PATTERN = Pattern.compile("signature=(.*);path");
+    private final static Pattern LOGIN_URL_PATTERN = Pattern.compile("<meta name=\"redirect\"[\\s\\S]*content=\"(.*)\">");
     private final static Pattern PWD_FORM_PATTERN = Pattern.compile("<form id=\"PwdForm\" action=\"([^\"]*)\".*name=\"X-Uaa-Csrf\" value=\"([^\"]*)\"");
 
     private final String ssoUrl;
