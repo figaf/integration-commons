@@ -37,6 +37,7 @@ public class BaseClient {
     private final static Pattern SIGNATURE_PATTERN = Pattern.compile("signature=(.*);path");
     private final static Pattern LOGIN_URL_PATTERN = Pattern.compile("<meta name=\"redirect\"[\\s\\S]*content=\"(.*)\">");
     private final static Pattern PWD_FORM_PATTERN = Pattern.compile("<form id=\"PwdForm\" action=\"([^\"]*)\".*name=\"X-Uaa-Csrf\" value=\"([^\"]*)\"");
+    private final static Pattern DEFAULT_IDENTITY_PROVIDER_PATTERN = Pattern.compile("<a href=\"(https://accounts\\.sap\\.com/[^\"]*)\"");
 
     private final String ssoUrl;
     protected final HttpClientsFactory httpClientsFactory;
@@ -323,6 +324,12 @@ public class BaseClient {
     private String getLoginPageUrlFromAuthorizationPage(String authorizationPageContent) {
         log.debug("#getLoginPageUrlFromAuthorizationPage(String authorizationPageContent)");
         String loginPageUrl = retrieveLoginPageUrl(authorizationPageContent);
+        if (loginPageUrl == null) {
+            Matcher matcher = DEFAULT_IDENTITY_PROVIDER_PATTERN.matcher(authorizationPageContent);
+            if (matcher.find()) {
+                loginPageUrl = matcher.group(1);
+            }
+        }
         return loginPageUrl != null ? loginPageUrl.replaceAll("amp;", "") : null;
     }
 
