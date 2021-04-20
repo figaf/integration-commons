@@ -324,12 +324,6 @@ public class BaseClient {
     private String getLoginPageUrlFromAuthorizationPage(String authorizationPageContent) {
         log.debug("#getLoginPageUrlFromAuthorizationPage(String authorizationPageContent)");
         String loginPageUrl = retrieveLoginPageUrl(authorizationPageContent);
-        if (loginPageUrl == null) {
-            Matcher matcher = DEFAULT_IDENTITY_PROVIDER_PATTERN.matcher(authorizationPageContent);
-            if (matcher.find()) {
-                loginPageUrl = matcher.group(1);
-            }
-        }
         return loginPageUrl != null ? loginPageUrl.replaceAll("amp;", "") : null;
     }
 
@@ -394,7 +388,11 @@ public class BaseClient {
     }
 
     private String retrieveLoginPageUrl(String responseBodyString) {
-        return getFirstMatchedGroup(responseBodyString, LOGIN_URL_PATTERN, null);
+        String loginPageUrl = getFirstMatchedGroup(responseBodyString, LOGIN_URL_PATTERN, null);
+        if (loginPageUrl == null) {
+            loginPageUrl = getFirstMatchedGroup(responseBodyString, DEFAULT_IDENTITY_PROVIDER_PATTERN, null);
+        }
+        return loginPageUrl;
     }
 
     private String getFirstMatchedGroup(String responseBodyString, Pattern pattern, String defaultValue) {
