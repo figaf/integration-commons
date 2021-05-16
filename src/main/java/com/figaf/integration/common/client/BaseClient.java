@@ -26,6 +26,8 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import static java.util.Collections.singleton;
+
 /**
  * @author Arsenii Istlentev
  */
@@ -95,7 +97,9 @@ public class BaseClient {
                 return responseHandlerCallback.apply(url, token, restTemplateWrapperHelper.getOrCreateRestTemplateWrapperSingleton(requestContext.getRestTemplateWrapperKey()));
             } else {
                 ConnectionProperties connectionProperties = requestContext.getConnectionProperties();
-                RestTemplateWrapper restTemplateWrapper = restTemplateWrapperHelper.createRestTemplateWrapper(new BasicAuthenticationInterceptor(connectionProperties.getUsername(), connectionProperties.getPassword()));
+                RestTemplateWrapper restTemplateWrapper = restTemplateWrapperHelper.createRestTemplateWrapper(singleton(
+                    new BasicAuthenticationInterceptor(connectionProperties.getUsername(), connectionProperties.getPassword())
+                ));
                 String token = retrieveToken(requestContext, restTemplateWrapper.getRestTemplate(), pathForToken);
                 String url = buildUrl(requestContext, pathForMainRequest);
                 return responseHandlerCallback.apply(url, token, restTemplateWrapper);
@@ -164,7 +168,9 @@ public class BaseClient {
         if (CloudPlatformType.CLOUD_FOUNDRY.equals(requestContext.getCloudPlatformType())) {
             restTemplateWrapper = restTemplateWrapperHelper.getOrCreateRestTemplateWrapperSingleton(requestContext.getRestTemplateWrapperKey());
         } else {
-            restTemplateWrapper = restTemplateWrapperHelper.createRestTemplateWrapper(new BasicAuthenticationInterceptor(connectionProperties.getUsername(), connectionProperties.getPassword()));
+            restTemplateWrapper = restTemplateWrapperHelper.createRestTemplateWrapper(singleton(
+                new BasicAuthenticationInterceptor(connectionProperties.getUsername(), connectionProperties.getPassword())
+            ));
         }
         return restTemplateWrapper;
     }
