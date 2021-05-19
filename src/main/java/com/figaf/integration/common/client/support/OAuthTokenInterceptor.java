@@ -4,8 +4,8 @@ import com.figaf.integration.common.client.support.parser.OAuthTokenParser;
 import com.figaf.integration.common.entity.OAuthTokenRequestContext;
 import com.figaf.integration.common.exception.ClientIntegrationException;
 import com.figaf.integration.common.factory.HttpClientsFactory;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.StringUtils;
 import org.apache.http.client.entity.UrlEncodedFormEntity;
 import org.apache.http.message.BasicNameValuePair;
 import org.apache.http.util.EntityUtils;
@@ -20,28 +20,18 @@ import java.io.IOException;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.Arrays.asList;
-import static org.springframework.http.HttpStatus.UNAUTHORIZED;
 
 /**
  * @author Klochkov Sergey
  */
 @Slf4j
-public class OAuthTokenInterceptor<T extends OAuthTokenParser> implements ClientHttpRequestInterceptor {
+@RequiredArgsConstructor
+public class OAuthTokenInterceptor implements ClientHttpRequestInterceptor {
 
     private final OAuthTokenRequestContext oauthTokenRequestContext;
-    private final T oauthTokenParser;
+    private final OAuthTokenParser oauthTokenParser;
     private final HttpClientsFactory httpClientsFactory;
     private OAuthAccessToken accessToken;
-
-    public OAuthTokenInterceptor(
-        OAuthTokenRequestContext oAuthTokenRequestContext,
-        T oauthTokenParser,
-        HttpClientsFactory httpClientsFactory
-    ) {
-        this.oauthTokenRequestContext = oAuthTokenRequestContext;
-        this.oauthTokenParser = oauthTokenParser;
-        this.httpClientsFactory = httpClientsFactory;
-    }
 
     @Override
     public ClientHttpResponse intercept(
@@ -58,23 +48,27 @@ public class OAuthTokenInterceptor<T extends OAuthTokenParser> implements Client
         return execution.execute(request, body);
     }
 
-    private OAuthAccessToken getToken() throws IOException {
-        RestTemplate restTemplate = httpClientsFactory.createRestTemplate();
-        String oauthRequestBody = EntityUtils.toString(new UrlEncodedFormEntity(asList(
-            new BasicNameValuePair("grant_type", "client_credentials"),
-            new BasicNameValuePair("scope", ""),
-            new BasicNameValuePair("client_id", oauthTokenRequestContext.getClientId()),
-            new BasicNameValuePair("client_secret", oauthTokenRequestContext.getClientSecret())
-        )));
-        HttpHeaders httpHeaders = new HttpHeaders();
-        httpHeaders.set("Content-Type", MediaType.APPLICATION_FORM_URLENCODED_VALUE);
+    private OAuthAccessToken getToken() {
+        ResponseEntity<String> responseEntity;
+        try {
+            RestTemplate restTemplate = httpClientsFactory.createRestTemplate();
+            String oauthRequestBody = EntityUtils.toString(new UrlEncodedFormEntity(asList(
+                new BasicNameValuePair("grant_type", "client_credentials"),
+                new BasicNameValuePair("scope", ""),
+                new BasicNameValuePair("client_id", oauthTokenRequestContext.getClientId()),
+                new BasicNameValuePair("client_secret", oauthTokenRequestContext.getClientSecret())
+            )));
+            HttpHeaders httpHeaders = new HttpHeaders();
+            httpHeaders.set("Content-Type", MediaType.APPLICATION_FORM_URLENCODED_VALUE);
 
-        UriComponentsBuilder uriBuilder = UriComponentsBuilder.fromHttpUrl(oauthTokenRequestContext.getOauthTokenUrl());
-        HttpEntity<byte[]> requestEntity = new HttpEntity<>(oauthRequestBody.getBytes(UTF_8), httpHeaders);
-        ResponseEntity<String> responseEntity = restTemplate.exchange(uriBuilder.toUriString(), HttpMethod.POST, requestEntity, String.class);
-
-        if (responseEntity.getStatusCode() == UNAUTHORIZED && StringUtils.contains(responseEntity.getBody(), "invalid_token")) {
-            throw new ClientIntegrationException("Login/password are not correct");
+            UriComponentsBuilder uriBuilder = UriComponentsBuilder.fromHttpUrl(oauthTokenRequestContext.getOauthTokenUrl());
+            HttpEntity<byte[]> requestEntity = new HttpEntity<>(oauthRequestBody.getBytes(UTF_8), httpHeaders);
+            responseEntity = restTemplate.exchange(uriBuilder.toUriString(), HttpMethod.POST, requestEntity, String.class);
+        } catch (Exception ex) {
+            throw new ClientIntegrationException("Can't get access token " + ex.getMessage(), ex);
+        }
+        if (!responseEntity.getStatusCode().is2xxSuccessful()) {
+            throw new ClientIntegrationException("Can't get access token " + responseEntity.getBody());
         }
         return oauthTokenParser.parse(responseEntity.getBody());
     }

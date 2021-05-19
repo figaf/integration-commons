@@ -103,9 +103,9 @@ public class HttpClientsFactory {
         return new HttpComponentsClientHttpRequestFactory(createHttpClient());
     }
 
-    public RestTemplate createRestTemplate(ClientHttpRequestInterceptor clientHttpRequestInterceptor) {
+    public RestTemplate createRestTemplate(BasicAuthenticationInterceptor basicAuthenticationInterceptor) {
         RestTemplate restTemplate = new RestTemplate(getHttpComponentsClientHttpRequestFactory());
-        restTemplate.getInterceptors().add(clientHttpRequestInterceptor);
+        restTemplate.getInterceptors().add(basicAuthenticationInterceptor);
         restTemplate.getMessageConverters().add(0, new StringHttpMessageConverter(StandardCharsets.UTF_8));
         return restTemplate;
     }

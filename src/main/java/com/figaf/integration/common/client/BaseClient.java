@@ -6,6 +6,7 @@ import com.figaf.integration.common.entity.RequestContext;
 import com.figaf.integration.common.entity.RestTemplateWrapper;
 import com.figaf.integration.common.exception.ClientIntegrationException;
 import com.figaf.integration.common.factory.HttpClientsFactory;
+import com.figaf.integration.common.factory.RestTemplateWrapperFactory;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.jsoup.Jsoup;
@@ -43,13 +44,14 @@ public class BaseClient {
 
     private final String ssoUrl;
     protected final HttpClientsFactory httpClientsFactory;
-
-    private final RestTemplateWrapperHelper restTemplateWrapperHelper;
+    protected final RestTemplateWrapperFactory restTemplateWrapperFactory;
+    private final RestTemplateWrapperHolder restTemplateWrapperHolder;
 
     public BaseClient(String ssoUrl, HttpClientsFactory httpClientsFactory) {
         this.ssoUrl = ssoUrl;
         this.httpClientsFactory = httpClientsFactory;
-        this.restTemplateWrapperHelper = new RestTemplateWrapperHelper(httpClientsFactory);
+        this.restTemplateWrapperFactory = new RestTemplateWrapperFactory(httpClientsFactory);
+        this.restTemplateWrapperHolder = new RestTemplateWrapperHolder(restTemplateWrapperFactory);
     }
 
     public interface ResponseHandlerCallbackForReadMethods<R, T> {
@@ -91,13 +93,13 @@ public class BaseClient {
     public <R> R executeMethod(RequestContext requestContext, String pathForToken, String pathForMainRequest, ResponseHandlerCallbackForCrudMethods<R> responseHandlerCallback) {
         try {
             if (CloudPlatformType.CLOUD_FOUNDRY.equals(requestContext.getCloudPlatformType())) {
-                RestTemplateWrapper restTemplateWrapper = restTemplateWrapperHelper.getOrCreateRestTemplateWrapperSingleton(requestContext.getRestTemplateWrapperKey());
+                RestTemplateWrapper restTemplateWrapper = restTemplateWrapperHolder.getOrCreateRestTemplateWrapperSingleton(requestContext.getRestTemplateWrapperKey());
                 String token = retrieveToken(requestContext, restTemplateWrapper.getRestTemplate(), pathForToken);
                 String url = buildUrl(requestContext, pathForMainRequest);
-                return responseHandlerCallback.apply(url, token, restTemplateWrapperHelper.getOrCreateRestTemplateWrapperSingleton(requestContext.getRestTemplateWrapperKey()));
+                return responseHandlerCallback.apply(url, token, restTemplateWrapperHolder.getOrCreateRestTemplateWrapperSingleton(requestContext.getRestTemplateWrapperKey()));
             } else {
                 ConnectionProperties connectionProperties = requestContext.getConnectionProperties();
-                RestTemplateWrapper restTemplateWrapper = restTemplateWrapperHelper.createRestTemplateWrapper(singleton(
+                RestTemplateWrapper restTemplateWrapper = restTemplateWrapperFactory.createRestTemplateWrapper(singleton(
                     new BasicAuthenticationInterceptor(connectionProperties.getUsername(), connectionProperties.getPassword())
                 ));
                 String token = retrieveToken(requestContext, restTemplateWrapper.getRestTemplate(), pathForToken);
@@ -166,9 +168,9 @@ public class BaseClient {
         ConnectionProperties connectionProperties = requestContext.getConnectionProperties();
         RestTemplateWrapper restTemplateWrapper;
         if (CloudPlatformType.CLOUD_FOUNDRY.equals(requestContext.getCloudPlatformType())) {
-            restTemplateWrapper = restTemplateWrapperHelper.getOrCreateRestTemplateWrapperSingleton(requestContext.getRestTemplateWrapperKey());
+            restTemplateWrapper = restTemplateWrapperHolder.getOrCreateRestTemplateWrapperSingleton(requestContext.getRestTemplateWrapperKey());
         } else {
-            restTemplateWrapper = restTemplateWrapperHelper.createRestTemplateWrapper(singleton(
+            restTemplateWrapper = restTemplateWrapperFactory.createRestTemplateWrapper(singleton(
                 new BasicAuthenticationInterceptor(connectionProperties.getUsername(), connectionProperties.getPassword())
             ));
         }
@@ -180,7 +182,7 @@ public class BaseClient {
         final String url = buildUrl(connectionProperties, path);
         try {
             RequestEntity requestEntity = new RequestEntity(HttpMethod.GET, new URI(url));
-            RestTemplateWrapper restTemplateWrapper = restTemplateWrapperHelper.getOrCreateRestTemplateWrapperSingleton(requestContext.getRestTemplateWrapperKey());
+            RestTemplateWrapper restTemplateWrapper = restTemplateWrapperHolder.getOrCreateRestTemplateWrapperSingleton(requestContext.getRestTemplateWrapperKey());
             ResponseEntity<T> responseEntity = restTemplateWrapper.getRestTemplate().exchange(requestEntity, bodyType);
             return responseEntity;
         } catch (Exception ex) {
@@ -311,13 +313,13 @@ public class BaseClient {
         httpHeaders.add("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9");
         RequestEntity requestEntity = new RequestEntity(httpHeaders, HttpMethod.GET, new URI(url));
 
-        RestTemplateWrapper restTemplateWrapper = restTemplateWrapperHelper.getOrCreateRestTemplateWrapperSingleton(restTemplateWrapperKey);
+        RestTemplateWrapper restTemplateWrapper = restTemplateWrapperHolder.getOrCreateRestTemplateWrapperSingleton(restTemplateWrapperKey);
         ResponseEntity<String> responseEntity;
         try {
             responseEntity = restTemplateWrapper.getRestTemplate().exchange(requestEntity, String.class);
         } catch (HttpStatusCodeException ex) {
             if (HttpStatus.BAD_REQUEST.equals(ex.getStatusCode())) {
-                restTemplateWrapper = restTemplateWrapperHelper.createNewRestTemplateWrapper(restTemplateWrapperKey);
+                restTemplateWrapper = restTemplateWrapperHolder.createNewRestTemplateWrapper(restTemplateWrapperKey);
                 responseEntity = restTemplateWrapper.getRestTemplate().exchange(requestEntity, String.class);
             } else {
                 throw ex;
@@ -336,7 +338,7 @@ public class BaseClient {
     private String getLoginPageContent(String restTemplateWrapperKey, String url) throws Exception {
         log.debug("#getLoginPageContent(String restTemplateWrapperKey, String url): {}, {}", restTemplateWrapperKey, url);
         RequestEntity requestEntity = new RequestEntity(HttpMethod.GET, new URI(url));
-        RestTemplateWrapper restTemplateWrapper = restTemplateWrapperHelper.getOrCreateRestTemplateWrapperSingleton(restTemplateWrapperKey);
+        RestTemplateWrapper restTemplateWrapper = restTemplateWrapperHolder.getOrCreateRestTemplateWrapperSingleton(restTemplateWrapperKey);
         ResponseEntity<String> exchange = restTemplateWrapper.getRestTemplate().exchange(requestEntity, String.class);
         return exchange.getBody();
     }
@@ -345,7 +347,7 @@ public class BaseClient {
         log.debug("#authorize(String restTemplateWrapperKey, MultiValueMap<String, String> map, String loginUrl): {}, {}", restTemplateWrapperKey, loginUrl);
         HttpHeaders httpHeaders = new HttpHeaders();
         HttpEntity<MultiValueMap<String, String>> request = new HttpEntity<>(map, httpHeaders);
-        RestTemplateWrapper restTemplateWrapper = restTemplateWrapperHelper.getOrCreateRestTemplateWrapperSingleton(restTemplateWrapperKey);
+        RestTemplateWrapper restTemplateWrapper = restTemplateWrapperHolder.getOrCreateRestTemplateWrapperSingleton(restTemplateWrapperKey);
         ResponseEntity<String> response = restTemplateWrapper.getRestTemplate().postForEntity(loginUrl, request, String.class);
         String responseBody = response.getBody();
         if (StringUtils.contains(responseBody, "Sorry, we could not authenticate you")) {
@@ -367,7 +369,7 @@ public class BaseClient {
         }
 
         RequestEntity requestEntity = new RequestEntity(headers, HttpMethod.GET, new URI(url));
-        RestTemplateWrapper restTemplateWrapper = restTemplateWrapperHelper.getOrCreateRestTemplateWrapperSingleton(restTemplateWrapperKey);
+        RestTemplateWrapper restTemplateWrapper = restTemplateWrapperHolder.getOrCreateRestTemplateWrapperSingleton(restTemplateWrapperKey);
         ResponseEntity<T> responseEntity = restTemplateWrapper.getRestTemplate().exchange(requestEntity, responseType);
         return responseEntity;
     }
