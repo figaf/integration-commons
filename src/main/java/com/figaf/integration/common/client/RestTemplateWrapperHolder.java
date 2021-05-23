@@ -48,4 +48,8 @@ public class RestTemplateWrapperHolder {
         );
     }
 
+    public void deleteRestTemplateWrapperSingletonWithInterceptors(String key) {
+        keyToRestTemplateWrapperWithInterceptorsMap.remove(key);
+    }
+
 }
