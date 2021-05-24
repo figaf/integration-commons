@@ -10,6 +10,7 @@ import org.apache.http.conn.ssl.SSLConnectionSocketFactory;
 import org.apache.http.impl.client.HttpClientBuilder;
 import org.apache.http.impl.client.HttpClients;
 import org.apache.http.impl.conn.SystemDefaultRoutePlanner;
+import org.springframework.http.client.ClientHttpRequestInterceptor;
 import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
 import org.springframework.http.client.support.BasicAuthenticationInterceptor;
 import org.springframework.http.converter.StringHttpMessageConverter;
@@ -105,6 +106,12 @@ public class HttpClientsFactory {
     public RestTemplate createRestTemplate(BasicAuthenticationInterceptor basicAuthenticationInterceptor) {
         RestTemplate restTemplate = new RestTemplate(getHttpComponentsClientHttpRequestFactory());
         restTemplate.getInterceptors().add(basicAuthenticationInterceptor);
+        restTemplate.getMessageConverters().add(0, new StringHttpMessageConverter(StandardCharsets.UTF_8));
+        return restTemplate;
+    }
+
+    public RestTemplate createRestTemplate() {
+        RestTemplate restTemplate = new RestTemplate(getHttpComponentsClientHttpRequestFactory());
         restTemplate.getMessageConverters().add(0, new StringHttpMessageConverter(StandardCharsets.UTF_8));
         return restTemplate;
     }
