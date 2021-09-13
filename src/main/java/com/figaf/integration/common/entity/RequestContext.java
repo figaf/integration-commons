@@ -17,6 +17,21 @@ public class RequestContext {
     private Platform platform;
     private String restTemplateWrapperKey;
 
+    private String loginPageUrl;
+    private String ssoUrl;
+
+    private String oauthUrl;
+    private String clientId;
+    private String clientSecret;
+    private AuthenticationType authenticationType;
+
+    public RequestContext(ConnectionProperties connectionProperties, CloudPlatformType cloudPlatformType, Platform platform, String restTemplateWrapperKey) {
+        this.connectionProperties = connectionProperties;
+        this.cloudPlatformType = cloudPlatformType;
+        this.platform = platform;
+        this.restTemplateWrapperKey = restTemplateWrapperKey;
+    }
+
     public static RequestContext pro(ConnectionProperties connectionProperties) {
         return new RequestContext(
                 connectionProperties,
