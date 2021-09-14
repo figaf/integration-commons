@@ -1,13 +1,13 @@
 package com.figaf.integration.common.client;
 
-import com.figaf.integration.common.entity.CloudPlatformType;
-import com.figaf.integration.common.entity.ConnectionProperties;
-import com.figaf.integration.common.entity.RequestContext;
-import com.figaf.integration.common.entity.RestTemplateWrapper;
+import com.figaf.integration.common.client.support.OAuthTokenInterceptor;
+import com.figaf.integration.common.client.support.parser.CloudFoundryOAuthTokenParser;
+import com.figaf.integration.common.entity.*;
 import com.figaf.integration.common.exception.ClientIntegrationException;
 import com.figaf.integration.common.factory.HttpClientsFactory;
 import com.figaf.integration.common.factory.RestTemplateWrapperFactory;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
@@ -17,17 +17,20 @@ import org.springframework.http.*;
 import org.springframework.http.client.support.BasicAuthenticationInterceptor;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.RestTemplate;
 
 import java.net.*;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import static java.util.Collections.singleton;
+import static java.util.Collections.singletonList;
 
 /**
  * @author Arsenii Istlentev
@@ -40,21 +43,28 @@ public class BaseClient {
     private final static Pattern SIGNATURE_PATTERN = Pattern.compile("signature=(.*);path");
     private final static Pattern LOGIN_URL_PATTERN = Pattern.compile("<meta name=\"redirect\"[\\s\\S]*content=\"(.*)\">");
     private final static Pattern PWD_FORM_PATTERN = Pattern.compile("<form id=\"PwdForm\" action=\"([^\"]*)\".*name=\"X-Uaa-Csrf\" value=\"([^\"]*)\"");
+    private final static Pattern SAML_REDIRECT_FORM_PATTERN = Pattern.compile("<form id=\"samlRedirect\".*action=\"([^\"]*)\"");
+    private final static Pattern SAML_RESPONSE_PATTERN = Pattern.compile("id=\"SAMLResponse\" value=\"([^\"]*)\"");
+    private final static Pattern AUTHENTICITY_TOKEN_PATTERN = Pattern.compile("name=\"authenticity_token\".*value=\"([^\"]*)\"");
     private final static Pattern DEFAULT_IDENTITY_PROVIDER_PATTERN = Pattern.compile("<a href=\"(https://accounts\\.sap\\.com/[^\"]*)\"");
 
-    private final String ssoUrl;
+    private final static String DEFAULT_SSO_URL = "https://accounts.sap.com/saml2/idp/sso";
+
+    private static final String X_CSRF_TOKEN = "X-CSRF-Token";
+
     protected final HttpClientsFactory httpClientsFactory;
     protected final RestTemplateWrapperFactory restTemplateWrapperFactory;
     private final RestTemplateWrapperHolder restTemplateWrapperHolder;
+    private final CsrfTokenHolder csrfTokenHolder;
 
-    public BaseClient(String ssoUrl, HttpClientsFactory httpClientsFactory) {
-        this.ssoUrl = ssoUrl;
+    public BaseClient(HttpClientsFactory httpClientsFactory) {
         this.httpClientsFactory = httpClientsFactory;
         this.restTemplateWrapperFactory = new RestTemplateWrapperFactory(httpClientsFactory);
         this.restTemplateWrapperHolder = new RestTemplateWrapperHolder(restTemplateWrapperFactory);
+        this.csrfTokenHolder = new CsrfTokenHolder();
     }
 
-    public interface ResponseHandlerCallbackForReadMethods<R, T> {
+    public interface ResponseHandlerCallback<R, T> {
         R apply(T resolvedBody) throws Exception;
     }
 
@@ -62,11 +72,51 @@ public class BaseClient {
         R apply(String url, String token, RestTemplateWrapper restTemplateWrapper);
     }
 
-    public <R> R executeGet(RequestContext requestContext, String path, ResponseHandlerCallbackForReadMethods<R, String> responseHandlerCallback) {
+    public <R> R executeGet(RequestContext requestContext, String path, ResponseHandlerCallback<R, String> responseHandlerCallback) {
         return executeGet(requestContext, path, responseHandlerCallback, String.class);
     }
 
-    public <R, T> R executeGet(RequestContext requestContext, String path, ResponseHandlerCallbackForReadMethods<R, T> responseHandlerCallback, Class<T> bodyType) {
+    public <R> R executeGetPublicApiAndReturnResponseBody(RequestContext requestContext, String path, ResponseHandlerCallback<R, String> responseHandlerCallback) {
+        return executeGetPublicApiAndReturnResponseBody(requestContext, path, null, responseHandlerCallback, String.class);
+    }
+
+    public <R> R executeGetPublicApiAndReturnResponseBody(RequestContext requestContext, String path, HttpHeaders httpHeaders, ResponseHandlerCallback<R, String> responseHandlerCallback) {
+        return executeGetPublicApiAndReturnResponseBody(requestContext, path, httpHeaders, responseHandlerCallback, String.class);
+    }
+
+    public <R> R executeGetPublicApiAndReturnResponseEntity(RequestContext requestContext, String path, ResponseHandlerCallback<R, ResponseEntity<String>> responseHandlerCallback) {
+        return executeGetPublicApiAndReturnResponseEntity(requestContext, path, null, responseHandlerCallback, String.class);
+    }
+
+    public <R> R executeGetPublicApiAndReturnResponseEntity(RequestContext requestContext, String path, HttpHeaders httpHeaders, ResponseHandlerCallback<R, ResponseEntity<String>> responseHandlerCallback) {
+        return executeGetPublicApiAndReturnResponseEntity(requestContext, path, httpHeaders, responseHandlerCallback, String.class);
+    }
+
+    public <R, T> R executeGetPublicApiAndReturnResponseBody(RequestContext requestContext, String path, HttpHeaders httpHeaders, ResponseHandlerCallback<R, T> responseHandlerCallback, Class<T> bodyType) {
+        ResponseEntity<T> responseEntity = executeGetPublicApi(requestContext, path, httpHeaders, bodyType);
+        R response;
+        try {
+            response = responseHandlerCallback.apply(responseEntity.getBody());
+        } catch (Exception ex) {
+            log.error("Can't handle response body: ", ex);
+            throw new ClientIntegrationException(ex);
+        }
+        return response;
+    }
+
+    public <R, T> R executeGetPublicApiAndReturnResponseEntity(RequestContext requestContext, String path, HttpHeaders httpHeaders, ResponseHandlerCallback<R, ResponseEntity<T>> responseHandlerCallback, Class<T> bodyType) {
+        ResponseEntity<T> responseEntity = executeGetPublicApi(requestContext, path, httpHeaders, bodyType);
+        R response;
+        try {
+            response = responseHandlerCallback.apply(responseEntity);
+        } catch (Exception ex) {
+            log.error("Can't handle response body: ", ex);
+            throw new ClientIntegrationException(ex);
+        }
+        return response;
+    }
+
+    public <R, T> R executeGet(RequestContext requestContext, String path, ResponseHandlerCallback<R, T> responseHandlerCallback, Class<T> bodyType) {
         T responseBody;
         if (CloudPlatformType.CLOUD_FOUNDRY.equals(requestContext.getCloudPlatformType())) {
             ResponseEntity<T> initialResponseEntity = executeGetRequestReturningTextBody(requestContext, path, bodyType);
@@ -100,7 +150,7 @@ public class BaseClient {
             } else {
                 ConnectionProperties connectionProperties = requestContext.getConnectionProperties();
                 RestTemplateWrapper restTemplateWrapper = restTemplateWrapperFactory.createRestTemplateWrapper(singleton(
-                    new BasicAuthenticationInterceptor(connectionProperties.getUsername(), connectionProperties.getPassword())
+                        new BasicAuthenticationInterceptor(connectionProperties.getUsername(), connectionProperties.getPassword())
                 ));
                 String token = retrieveToken(requestContext, restTemplateWrapper.getRestTemplate(), pathForToken);
                 String url = buildUrl(requestContext, pathForMainRequest);
@@ -112,9 +162,48 @@ public class BaseClient {
         }
     }
 
-    private String retrieveToken(RequestContext requestContext, RestTemplate restTemplate) {
-        return retrieveToken(requestContext, restTemplate, "/itspaces/api/1.0/user");
+    public <R> R executeMethodPublicApi(RequestContext requestContext, String pathForMainRequest, String requestBody, HttpMethod httpMethod, ResponseHandlerCallback<R, ResponseEntity<String>> responseHandlerCallback) {
+        try {
+            RestTemplate restTemplate = getOrCreateRestTemplateWrapperSingletonWithInterceptors(requestContext);
+
+            String tokenUrl = buildUrl(requestContext, "/api/v1");
+            String url = buildUrl(requestContext, pathForMainRequest);
+
+            String csrfToken = csrfTokenHolder.getCsrfToken(requestContext.getRestTemplateWrapperKey(), restTemplate, tokenUrl);
+
+            HttpHeaders httpHeaders = new HttpHeaders();
+            httpHeaders.setContentType(MediaType.APPLICATION_JSON);
+            httpHeaders.add(X_CSRF_TOKEN, csrfToken);
+
+            HttpEntity<String> requestEntity = new HttpEntity<>(requestBody, httpHeaders);
+
+            try {
+                ResponseEntity<String> responseEntity = restTemplate.exchange(
+                        url,
+                        httpMethod,
+                        requestEntity,
+                        String.class
+                );
+                return responseHandlerCallback.apply(responseEntity);
+            } catch (HttpClientErrorException.Forbidden ex) {
+                ResponseEntity<String> responseEntity = processForbiddenHttpClientErrorException(
+                        ex,
+                        restTemplate,
+                        url,
+                        tokenUrl,
+                        requestEntity,
+                        httpMethod,
+                        requestContext.getRestTemplateWrapperKey(),
+                        requestEntity.getHeaders().getFirst(X_CSRF_TOKEN)
+                );
+                return responseHandlerCallback.apply(responseEntity);
+            }
+        } catch (Exception ex) {
+            log.error("Can't executeMethodPublicApi: ", ex);
+            throw new ClientIntegrationException(ex);
+        }
     }
+
 
     private String retrieveToken(RequestContext requestContext, RestTemplate restTemplate, String path) {
         try {
@@ -171,7 +260,7 @@ public class BaseClient {
             restTemplateWrapper = restTemplateWrapperHolder.getOrCreateRestTemplateWrapperSingleton(requestContext.getRestTemplateWrapperKey());
         } else {
             restTemplateWrapper = restTemplateWrapperFactory.createRestTemplateWrapper(singleton(
-                new BasicAuthenticationInterceptor(connectionProperties.getUsername(), connectionProperties.getPassword())
+                    new BasicAuthenticationInterceptor(connectionProperties.getUsername(), connectionProperties.getPassword())
             ));
         }
         return restTemplateWrapper;
@@ -272,27 +361,55 @@ public class BaseClient {
             String signature = retrieveSignature(responseBodyString);
 
             String restTemplateWrapperKey = requestContext.getRestTemplateWrapperKey();
-            String authorizationPageContent = getAuthorizationPageContent(restTemplateWrapperKey, authorizationUrl);
             String redirectUrlReceivedAfterSuccessfulAuthorization;
-            String loginPageUrl = getLoginPageUrlFromAuthorizationPage(authorizationPageContent);
-            if (loginPageUrl != null) {
-                String loginPageContent = getLoginPageContent(restTemplateWrapperKey, loginPageUrl);
-                MultiValueMap<String, String> loginFormData = buildLoginFormDataForSso(requestContext, loginPageContent);
-                redirectUrlReceivedAfterSuccessfulAuthorization = authorize(restTemplateWrapperKey, loginFormData, this.ssoUrl);
-            } else {
-                Matcher matcher = PWD_FORM_PATTERN.matcher(authorizationPageContent);
-                String loginDoPath;
-                String csrfToken;
-                if (matcher.find()) {
-                    loginDoPath = matcher.group(1);
-                    csrfToken = matcher.group(2);
-                } else {
-                    throw new ClientIntegrationException(String.format("Can't retrieve login page url or login form data from %s", authorizationPageContent));
-                }
 
-                MultiValueMap<String, String> loginFormData = buildLoginFormData(requestContext, csrfToken);
-                String loginUrl = buildLoginUrl(authorizationUrl, loginDoPath);
-                redirectUrlReceivedAfterSuccessfulAuthorization = authorize(restTemplateWrapperKey, loginFormData, loginUrl);
+            if (StringUtils.isNotEmpty(requestContext.getLoginPageUrl())) {
+                //if we have loginPageUrl, the next call (getAuthorizationPageContent) is needed only for receiving cookies
+                getAuthorizationPageContent(restTemplateWrapperKey, authorizationUrl);
+                ResponseEntity<String> loginPageContentResponseEntity = getLoginPageContent(restTemplateWrapperKey, requestContext.getLoginPageUrl());
+                List<String> cookies = loginPageContentResponseEntity.getHeaders().get(HttpHeaders.SET_COOKIE);
+                MultiValueMap<String, String> loginFormData = buildLoginFormDataForSso(requestContext, loginPageContentResponseEntity.getBody());
+                redirectUrlReceivedAfterSuccessfulAuthorization = authorize(restTemplateWrapperKey, loginFormData, requestContext.getSsoUrl(), cookies);
+
+                ResponseEntity<T> responseEntity = executeRedirectRequestAfterSuccessfulAuthorization(
+                        restTemplateWrapperKey,
+                        redirectUrlReceivedAfterSuccessfulAuthorization,
+                        path,
+                        signature,
+                        additionalHeaders,
+                        responseType
+                );
+
+                String responseBodyAsString = getResponseBodyString(responseEntity);
+                String samlRedirectUrl = getFirstMatchedGroup(responseBodyAsString, SAML_REDIRECT_FORM_PATTERN, null);
+                //if samlRedirectUrl is null, it means that we already have a result. But if it's not null, we need to do an additional call
+                if (samlRedirectUrl == null) {
+                    return responseEntity;
+                }
+                redirectUrlReceivedAfterSuccessfulAuthorization = authorizeViaSaml(restTemplateWrapperKey, responseBodyAsString, samlRedirectUrl);
+            } else {
+
+                String authorizationPageContent = getAuthorizationPageContent(restTemplateWrapperKey, authorizationUrl);
+                String loginPageUrl = getLoginPageUrlFromAuthorizationPage(authorizationPageContent);
+                if (loginPageUrl != null) {
+                    ResponseEntity<String> loginPageContentResponseEntity = getLoginPageContent(restTemplateWrapperKey, loginPageUrl);
+                    MultiValueMap<String, String> loginFormData = buildLoginFormDataForSso(requestContext, loginPageContentResponseEntity.getBody());
+                    redirectUrlReceivedAfterSuccessfulAuthorization = authorize(restTemplateWrapperKey, loginFormData, requestContext.getSsoUrl(), null);
+                } else {
+                    Matcher matcher = PWD_FORM_PATTERN.matcher(authorizationPageContent);
+                    String loginDoPath;
+                    String csrfToken;
+                    if (matcher.find()) {
+                        loginDoPath = matcher.group(1);
+                        csrfToken = matcher.group(2);
+                    } else {
+                        throw new ClientIntegrationException(String.format("Can't retrieve login page url or login form data from %s", authorizationPageContent));
+                    }
+
+                    MultiValueMap<String, String> loginFormData = buildLoginFormData(requestContext, csrfToken);
+                    String loginUrl = buildLoginUrl(authorizationUrl, loginDoPath);
+                    redirectUrlReceivedAfterSuccessfulAuthorization = authorize(restTemplateWrapperKey, loginFormData, loginUrl, null);
+                }
             }
 
             return executeRedirectRequestAfterSuccessfulAuthorization(
@@ -335,17 +452,25 @@ public class BaseClient {
         return loginPageUrl != null ? loginPageUrl.replaceAll("amp;", "") : null;
     }
 
-    private String getLoginPageContent(String restTemplateWrapperKey, String url) throws Exception {
+    private ResponseEntity<String> getLoginPageContent(String restTemplateWrapperKey, String url) throws Exception {
         log.debug("#getLoginPageContent(String restTemplateWrapperKey, String url): {}, {}", restTemplateWrapperKey, url);
-        RequestEntity requestEntity = new RequestEntity(HttpMethod.GET, new URI(url));
+        HttpHeaders httpHeaders = new HttpHeaders();
+        httpHeaders.add("Accept", "*/*");
+        RequestEntity requestEntity = new RequestEntity(httpHeaders, HttpMethod.GET, new URI(url));
         RestTemplateWrapper restTemplateWrapper = restTemplateWrapperHolder.getOrCreateRestTemplateWrapperSingleton(restTemplateWrapperKey);
         ResponseEntity<String> exchange = restTemplateWrapper.getRestTemplate().exchange(requestEntity, String.class);
-        return exchange.getBody();
+        return exchange;
     }
 
-    private String authorize(String restTemplateWrapperKey, MultiValueMap<String, String> map, String loginUrl) {
+    private String authorize(String restTemplateWrapperKey, MultiValueMap<String, String> map, String loginUrl, List<String> cookies) {
         log.debug("#authorize(String restTemplateWrapperKey, MultiValueMap<String, String> map, String loginUrl): {}, {}", restTemplateWrapperKey, loginUrl);
+        if (StringUtils.isEmpty(loginUrl)) {
+            loginUrl = DEFAULT_SSO_URL;
+        }
         HttpHeaders httpHeaders = new HttpHeaders();
+        if (CollectionUtils.isNotEmpty(cookies)) {
+            httpHeaders.add("Cookie", StringUtils.join(cookies, "; "));
+        }
         HttpEntity<MultiValueMap<String, String>> request = new HttpEntity<>(map, httpHeaders);
         RestTemplateWrapper restTemplateWrapper = restTemplateWrapperHolder.getOrCreateRestTemplateWrapperSingleton(restTemplateWrapperKey);
         ResponseEntity<String> response = restTemplateWrapper.getRestTemplate().postForEntity(loginUrl, request, String.class);
@@ -354,6 +479,22 @@ public class BaseClient {
             throw new ClientIntegrationException("Login/password are not correct");
         }
         return response.getHeaders().getFirst("Location");
+    }
+
+    private String authorizeViaSaml(String restTemplateWrapperKey, String responseBodyAsString, String samlRedirectUrl) {
+        String redirectUrlReceivedAfterSuccessfulAuthorization;
+        String samlResponse = getFirstMatchedGroup(responseBodyAsString, SAML_RESPONSE_PATTERN, null);
+        String authenticityToken = getFirstMatchedGroup(responseBodyAsString, AUTHENTICITY_TOKEN_PATTERN, null);
+
+        MultiValueMap<String, String> body = new LinkedMultiValueMap<>();
+        body.add("authenticity_token", authenticityToken);
+        body.add("SAMLResponse", samlResponse);
+        HttpHeaders httpHeaders = new HttpHeaders();
+        HttpEntity<MultiValueMap<String, String>> request = new HttpEntity<>(body, httpHeaders);
+        RestTemplateWrapper restTemplateWrapper = restTemplateWrapperHolder.getOrCreateRestTemplateWrapperSingleton(restTemplateWrapperKey);
+        ResponseEntity<String> responseEntity = restTemplateWrapper.getRestTemplate().postForEntity(samlRedirectUrl, request, String.class);
+        redirectUrlReceivedAfterSuccessfulAuthorization = responseEntity.getHeaders().getFirst("location");
+        return redirectUrlReceivedAfterSuccessfulAuthorization;
     }
 
     private <T> ResponseEntity<T> executeRedirectRequestAfterSuccessfulAuthorization(String restTemplateWrapperKey, String url, String initialPath, String signature, HttpHeaders additionalHeaders, Class<T> responseType) throws Exception {
@@ -370,6 +511,7 @@ public class BaseClient {
 
         RequestEntity requestEntity = new RequestEntity(headers, HttpMethod.GET, new URI(url));
         RestTemplateWrapper restTemplateWrapper = restTemplateWrapperHolder.getOrCreateRestTemplateWrapperSingleton(restTemplateWrapperKey);
+
         ResponseEntity<T> responseEntity = restTemplateWrapper.getRestTemplate().exchange(requestEntity, responseType);
         return responseEntity;
     }
@@ -449,6 +591,97 @@ public class BaseClient {
     private String buildLoginUrl(String authorizationUrl, String loginDoPath) throws MalformedURLException {
         URL url = new URL(authorizationUrl);
         return String.format("%s://%s/%s", url.getProtocol(), url.getAuthority(), loginDoPath);
+    }
+
+    private <T> ResponseEntity<T> executeGetPublicApi(RequestContext requestContext, String path, HttpHeaders httpHeaders, Class<T> bodyType) {
+        RestTemplate restTemplate = getOrCreateRestTemplateWrapperSingletonWithInterceptors(requestContext);
+
+        String url = buildUrl(requestContext, path);
+
+        if (httpHeaders == null) {
+            httpHeaders = new HttpHeaders();
+        }
+        if (httpHeaders.getContentType() == null) {
+            httpHeaders.setContentType(MediaType.APPLICATION_JSON);
+        }
+        HttpEntity<Map<String, String>> requestEntity = new HttpEntity<>(httpHeaders);
+        return restTemplate.exchange(
+                url,
+                HttpMethod.GET,
+                requestEntity,
+                bodyType
+        );
+    }
+
+    public RestTemplate getOrCreateRestTemplateWrapperSingletonWithInterceptors(RequestContext requestContext) {
+        RestTemplate restTemplate;
+        if (CloudPlatformType.CLOUD_FOUNDRY.equals(requestContext.getCloudPlatformType()) && AuthenticationType.OAUTH.equals(requestContext.getAuthenticationType())) {
+            restTemplate = restTemplateWrapperHolder.getOrCreateRestTemplateWrapperSingletonWithInterceptors(
+                    requestContext.getRestTemplateWrapperKey(),
+                    singleton(new OAuthTokenInterceptor(
+                            new OAuthTokenRequestContext(
+                                    requestContext.getClientId(),
+                                    requestContext.getClientSecret(),
+                                    requestContext.getOauthUrl()
+                            ),
+                            new CloudFoundryOAuthTokenParser(),
+                            httpClientsFactory
+                    ))
+            ).getRestTemplate();
+        } else {
+            restTemplate = restTemplateWrapperHolder.getOrCreateRestTemplateWrapperSingletonWithInterceptors(
+                    requestContext.getRestTemplateWrapperKey(),
+                    singleton(
+                            new BasicAuthenticationInterceptor(requestContext.getConnectionProperties().getUsername(), requestContext.getConnectionProperties().getPassword())
+                    )
+            ).getRestTemplate();
+        }
+        return restTemplate;
+    }
+
+    private ResponseEntity<String> processForbiddenHttpClientErrorException(
+            HttpClientErrorException.Forbidden ex,
+            RestTemplate restTemplate,
+            String url,
+            String tokenUrl,
+            HttpEntity<String> requestEntity,
+            HttpMethod httpMethod,
+            String key,
+            String oldToken
+    ) {
+        if (ex.getResponseHeaders() != null &&
+                "required".equalsIgnoreCase(ex.getResponseHeaders().getFirst(X_CSRF_TOKEN))
+        ) {
+            log.warn("xsrf token will be updated");
+            return restTemplate.exchange(
+                    url,
+                    httpMethod,
+                    createRequestEntityWithNewCsrfToken(
+                            restTemplate,
+                            tokenUrl,
+                            requestEntity,
+                            key,
+                            oldToken
+                    ),
+                    String.class
+            );
+        } else {
+            throw ex;
+        }
+    }
+
+    private HttpEntity<String> createRequestEntityWithNewCsrfToken(
+            RestTemplate restTemplate,
+            String url,
+            HttpEntity<String> requestEntity,
+            String tokenKey,
+            String oldToken
+    ) {
+        String csrfToken = csrfTokenHolder.getAndSaveNewCsrfTokenIfNeed(tokenKey, restTemplate, url, oldToken);
+        HttpHeaders httpHeaders = new HttpHeaders();
+        httpHeaders.addAll(requestEntity.getHeaders());
+        httpHeaders.put(X_CSRF_TOKEN, singletonList(csrfToken));
+        return new HttpEntity<>(requestEntity.getBody(), httpHeaders);
     }
 
 }
