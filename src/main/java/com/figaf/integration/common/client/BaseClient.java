@@ -369,7 +369,7 @@ public class BaseClient {
                 ResponseEntity<String> loginPageContentResponseEntity = getLoginPageContent(restTemplateWrapperKey, requestContext.getLoginPageUrl());
                 List<String> cookies = loginPageContentResponseEntity.getHeaders().get(HttpHeaders.SET_COOKIE);
                 MultiValueMap<String, String> loginFormData = buildLoginFormDataForSso(requestContext, loginPageContentResponseEntity.getBody());
-                redirectUrlReceivedAfterSuccessfulAuthorization = authorize(restTemplateWrapperKey, loginFormData, requestContext.getSsoUrl(), cookies);
+                redirectUrlReceivedAfterSuccessfulAuthorization = authorizeAndGetLocationHeader(requestContext, loginFormData, requestContext.getSsoUrl(), cookies);
 
                 ResponseEntity<T> responseEntity = executeRedirectRequestAfterSuccessfulAuthorization(
                         restTemplateWrapperKey,
@@ -386,7 +386,7 @@ public class BaseClient {
                 if (samlRedirectUrl == null) {
                     return responseEntity;
                 }
-                redirectUrlReceivedAfterSuccessfulAuthorization = authorizeViaSaml(restTemplateWrapperKey, responseBodyAsString, samlRedirectUrl);
+                redirectUrlReceivedAfterSuccessfulAuthorization = authorizeViaSamlAndGetLocationHeader(restTemplateWrapperKey, responseBodyAsString, samlRedirectUrl);
             } else {
 
                 String authorizationPageContent = getAuthorizationPageContent(restTemplateWrapperKey, authorizationUrl);
@@ -394,7 +394,7 @@ public class BaseClient {
                 if (loginPageUrl != null) {
                     ResponseEntity<String> loginPageContentResponseEntity = getLoginPageContent(restTemplateWrapperKey, loginPageUrl);
                     MultiValueMap<String, String> loginFormData = buildLoginFormDataForSso(requestContext, loginPageContentResponseEntity.getBody());
-                    redirectUrlReceivedAfterSuccessfulAuthorization = authorize(restTemplateWrapperKey, loginFormData, requestContext.getSsoUrl(), null);
+                    redirectUrlReceivedAfterSuccessfulAuthorization = authorizeAndGetLocationHeader(requestContext, loginFormData, requestContext.getSsoUrl(), null);
                 } else {
                     Matcher matcher = PWD_FORM_PATTERN.matcher(authorizationPageContent);
                     String loginDoPath;
@@ -408,7 +408,7 @@ public class BaseClient {
 
                     MultiValueMap<String, String> loginFormData = buildLoginFormData(requestContext, csrfToken);
                     String loginUrl = buildLoginUrl(authorizationUrl, loginDoPath);
-                    redirectUrlReceivedAfterSuccessfulAuthorization = authorize(restTemplateWrapperKey, loginFormData, loginUrl, null);
+                    redirectUrlReceivedAfterSuccessfulAuthorization = authorizeAndGetLocationHeader(requestContext, loginFormData, loginUrl, null);
                 }
             }
 
@@ -462,26 +462,25 @@ public class BaseClient {
         return exchange;
     }
 
-    private String authorize(String restTemplateWrapperKey, MultiValueMap<String, String> map, String loginUrl, List<String> cookies) {
-        log.debug("#authorize(String restTemplateWrapperKey, MultiValueMap<String, String> map, String loginUrl): {}, {}", restTemplateWrapperKey, loginUrl);
-        if (StringUtils.isEmpty(loginUrl)) {
-            loginUrl = DEFAULT_SSO_URL;
+    private String authorizeAndGetLocationHeader(RequestContext requestContext, MultiValueMap<String, String> loginFormData, String loginUrl, List<String> cookies) {
+        log.debug("#authorizeAndGetLocationHeader(RequestContext requestContext, MultiValueMap<String, String> loginFormData, String loginUrl, List<String> cookies): {}, {}", requestContext, loginUrl);
+
+        ResponseEntity<String> responseEntity = authorize(requestContext, loginFormData, loginUrl, cookies);
+        String location = responseEntity.getHeaders().getFirst("Location");
+
+        //IRT-2657: SAP has split authentication process into two steps
+        if (location == null && responseEntity.getBody() != null) {
+            loginFormData = buildLoginFormDataForSso(requestContext, responseEntity.getBody());
+            responseEntity = authorize(requestContext, loginFormData, loginUrl, cookies);
+            location = responseEntity.getHeaders().getFirst("Location");
         }
-        HttpHeaders httpHeaders = new HttpHeaders();
-        if (CollectionUtils.isNotEmpty(cookies)) {
-            httpHeaders.add("Cookie", StringUtils.join(cookies, "; "));
+        if (location == null) {
+            throw new ClientIntegrationException(String.format("Can't find 'Location' header in the response. Probably it's authentication issue. Body: %s", responseEntity.getBody()));
         }
-        HttpEntity<MultiValueMap<String, String>> request = new HttpEntity<>(map, httpHeaders);
-        RestTemplateWrapper restTemplateWrapper = restTemplateWrapperHolder.getOrCreateRestTemplateWrapperSingleton(restTemplateWrapperKey);
-        ResponseEntity<String> response = restTemplateWrapper.getRestTemplate().postForEntity(loginUrl, request, String.class);
-        String responseBody = response.getBody();
-        if (StringUtils.contains(responseBody, "Sorry, we could not authenticate you")) {
-            throw new ClientIntegrationException("Login/password are not correct");
-        }
-        return response.getHeaders().getFirst("Location");
+        return location;
     }
 
-    private String authorizeViaSaml(String restTemplateWrapperKey, String responseBodyAsString, String samlRedirectUrl) {
+    private String authorizeViaSamlAndGetLocationHeader(String restTemplateWrapperKey, String responseBodyAsString, String samlRedirectUrl) {
         String redirectUrlReceivedAfterSuccessfulAuthorization;
         String samlResponse = getFirstMatchedGroup(responseBodyAsString, SAML_RESPONSE_PATTERN, null);
         String authenticityToken = getFirstMatchedGroup(responseBodyAsString, AUTHENTICITY_TOKEN_PATTERN, null);
@@ -495,6 +494,23 @@ public class BaseClient {
         ResponseEntity<String> responseEntity = restTemplateWrapper.getRestTemplate().postForEntity(samlRedirectUrl, request, String.class);
         redirectUrlReceivedAfterSuccessfulAuthorization = responseEntity.getHeaders().getFirst("location");
         return redirectUrlReceivedAfterSuccessfulAuthorization;
+    }
+
+    private ResponseEntity<String> authorize(RequestContext requestContext, MultiValueMap<String, String> map, String loginUrl, List<String> cookies) {
+        if (StringUtils.isEmpty(loginUrl)) {
+            loginUrl = DEFAULT_SSO_URL;
+        }
+        HttpHeaders httpHeaders = new HttpHeaders();
+        if (CollectionUtils.isNotEmpty(cookies)) {
+            httpHeaders.add("Cookie", StringUtils.join(cookies, "; "));
+        }
+        HttpEntity<MultiValueMap<String, String>> request = new HttpEntity<>(map, httpHeaders);
+        RestTemplateWrapper restTemplateWrapper = restTemplateWrapperHolder.getOrCreateRestTemplateWrapperSingleton(requestContext.getRestTemplateWrapperKey());
+        ResponseEntity<String> response = restTemplateWrapper.getRestTemplate().postForEntity(loginUrl, request, String.class);
+        if (StringUtils.contains(response.getBody(), "Sorry, we could not authenticate you")) {
+            throw new ClientIntegrationException("Login/password are not correct");
+        }
+        return response;
     }
 
     private <T> ResponseEntity<T> executeRedirectRequestAfterSuccessfulAuthorization(String restTemplateWrapperKey, String url, String initialPath, String signature, HttpHeaders additionalHeaders, Class<T> responseType) throws Exception {
