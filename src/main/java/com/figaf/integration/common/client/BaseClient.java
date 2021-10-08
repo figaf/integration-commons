@@ -31,6 +31,7 @@ import java.util.regex.Pattern;
 
 import static java.util.Collections.singleton;
 import static java.util.Collections.singletonList;
+import static org.springframework.http.HttpMethod.DELETE;
 
 /**
  * @author Arsenii Istlentev
@@ -162,48 +163,109 @@ public class BaseClient {
         }
     }
 
-    public <R> R executeMethodPublicApi(RequestContext requestContext, String pathForMainRequest, String requestBody, HttpMethod httpMethod, ResponseHandlerCallback<R, ResponseEntity<String>> responseHandlerCallback) {
+    public <R> R executeMethodPublicApi(
+        RequestContext requestContext,
+        String pathForMainRequest,
+        String requestBody,
+        HttpMethod httpMethod,
+        ResponseHandlerCallback<R, ResponseEntity<String>> responseHandlerCallback
+    ) {
         try {
             RestTemplate restTemplate = getOrCreateRestTemplateWrapperSingletonWithInterceptors(requestContext);
-
             String tokenUrl = buildUrl(requestContext, "/api/v1");
             String url = buildUrl(requestContext, pathForMainRequest);
-
-            String csrfToken = csrfTokenHolder.getCsrfToken(requestContext.getRestTemplateWrapperKey(), restTemplate, tokenUrl);
-
-            HttpHeaders httpHeaders = new HttpHeaders();
-            httpHeaders.setContentType(MediaType.APPLICATION_JSON);
-            httpHeaders.add(X_CSRF_TOKEN, csrfToken);
-
+            HttpHeaders httpHeaders = createHttpHeadersForPublicApiMethods(requestContext, restTemplate, tokenUrl);
             HttpEntity<String> requestEntity = new HttpEntity<>(requestBody, httpHeaders);
-
-            try {
-                ResponseEntity<String> responseEntity = restTemplate.exchange(
-                        url,
-                        httpMethod,
-                        requestEntity,
-                        String.class
-                );
-                return responseHandlerCallback.apply(responseEntity);
-            } catch (HttpClientErrorException.Forbidden ex) {
-                ResponseEntity<String> responseEntity = processForbiddenHttpClientErrorException(
-                        ex,
-                        restTemplate,
-                        url,
-                        tokenUrl,
-                        requestEntity,
-                        httpMethod,
-                        requestContext.getRestTemplateWrapperKey(),
-                        requestEntity.getHeaders().getFirst(X_CSRF_TOKEN)
-                );
-                return responseHandlerCallback.apply(responseEntity);
-            }
+            return executeMethodPublicApi(
+                requestContext,
+                restTemplate,
+                url,
+                tokenUrl,
+                httpMethod,
+                requestEntity,
+                responseHandlerCallback
+            );
         } catch (Exception ex) {
             log.error("Can't executeMethodPublicApi: ", ex);
             throw new ClientIntegrationException(ex);
         }
     }
 
+    public <R> R executeDeletePublicApi(
+        RequestContext requestContext,
+        String pathForMainRequest,
+        ResponseHandlerCallback<R, ResponseEntity<String>> responseHandlerCallback
+    ) {
+        try {
+            RestTemplate restTemplate = getOrCreateRestTemplateWrapperSingletonWithInterceptors(requestContext);
+            String url = buildUrl(requestContext, pathForMainRequest);
+            String tokenUrl = buildUrl(requestContext, "/api/v1");
+            HttpHeaders httpHeaders = createHttpHeadersForPublicApiMethods(requestContext, restTemplate, tokenUrl);
+            HttpEntity<Void> requestEntity = new HttpEntity<>(httpHeaders);
+            return executeMethodPublicApi(
+                requestContext,
+                restTemplate,
+                url,
+                tokenUrl,
+                DELETE,
+                requestEntity,
+                responseHandlerCallback
+            );
+        } catch (Exception ex) {
+            log.error("Can't executeDeletePublicApi: ", ex);
+            throw new ClientIntegrationException(ex);
+        }
+    }
+
+    protected HttpHeaders createHttpHeadersWithCSRFToken(String token) {
+        HttpHeaders httpHeaders = new HttpHeaders();
+        httpHeaders.add(X_CSRF_TOKEN, token);
+        return httpHeaders;
+    }
+
+    private <R, T> R executeMethodPublicApi(
+        RequestContext requestContext,
+        RestTemplate restTemplate,
+        String url,
+        String tokenUrl,
+        HttpMethod httpMethod,
+        HttpEntity<T> requestEntity,
+        ResponseHandlerCallback<R, ResponseEntity<String>> responseHandlerCallback
+    ) throws Exception {
+        try {
+            ResponseEntity<String> responseEntity = restTemplate.exchange(
+                url,
+                httpMethod,
+                requestEntity,
+                String.class
+            );
+            return responseHandlerCallback.apply(responseEntity);
+        } catch (HttpClientErrorException.Forbidden ex) {
+            ResponseEntity<String> responseEntity = processForbiddenHttpClientErrorException(
+                ex,
+                restTemplate,
+                url,
+                tokenUrl,
+                requestEntity,
+                httpMethod,
+                requestContext.getRestTemplateWrapperKey(),
+                requestEntity.getHeaders().getFirst(X_CSRF_TOKEN)
+            );
+            return responseHandlerCallback.apply(responseEntity);
+        }
+    }
+
+    private HttpHeaders createHttpHeadersForPublicApiMethods(
+        RequestContext requestContext,
+        RestTemplate restTemplate,
+        String tokenUrl
+    ) {
+        String csrfToken = csrfTokenHolder.getCsrfToken(requestContext.getRestTemplateWrapperKey(), restTemplate, tokenUrl);
+        HttpHeaders httpHeaders = new HttpHeaders();
+        httpHeaders.setContentType(MediaType.APPLICATION_JSON);
+        httpHeaders.add(X_CSRF_TOKEN, csrfToken);
+        return httpHeaders;
+    }
 
     private String retrieveToken(RequestContext requestContext, RestTemplate restTemplate, String path) {
         try {
@@ -211,7 +273,7 @@ public class BaseClient {
             String url = buildUrl(connectionProperties, path);
             ResponseEntity<String> responseEntity;
             HttpHeaders httpHeaders = new HttpHeaders();
-            httpHeaders.add("X-CSRF-Token", "Fetch");
+            httpHeaders.add(X_CSRF_TOKEN, "Fetch");
             if (CloudPlatformType.CLOUD_FOUNDRY.equals(requestContext.getCloudPlatformType())) {
                 RequestEntity requestEntity = new RequestEntity(httpHeaders, HttpMethod.GET, new URI(url));
                 ResponseEntity<String> initialResponseEntity = restTemplate.exchange(requestEntity, String.class);
@@ -237,7 +299,7 @@ public class BaseClient {
                 );
             }
 
-            String token = responseEntity.getHeaders().getFirst("X-CSRF-Token");
+            String token = responseEntity.getHeaders().getFirst(X_CSRF_TOKEN);
             return token;
         } catch (Exception ex) {
             log.error("Can't retrieveToken: ", ex);
@@ -655,12 +717,12 @@ public class BaseClient {
         return restTemplate;
     }
 
-    private ResponseEntity<String> processForbiddenHttpClientErrorException(
+    private <T> ResponseEntity<String> processForbiddenHttpClientErrorException(
             HttpClientErrorException.Forbidden ex,
             RestTemplate restTemplate,
             String url,
             String tokenUrl,
-            HttpEntity<String> requestEntity,
+            HttpEntity<T> requestEntity,
             HttpMethod httpMethod,
             String key,
             String oldToken
@@ -686,10 +748,10 @@ public class BaseClient {
         }
     }
 
-    private HttpEntity<String> createRequestEntityWithNewCsrfToken(
+    private <T> HttpEntity<T> createRequestEntityWithNewCsrfToken(
             RestTemplate restTemplate,
             String url,
-            HttpEntity<String> requestEntity,
+            HttpEntity<T> requestEntity,
             String tokenKey,
             String oldToken
     ) {
