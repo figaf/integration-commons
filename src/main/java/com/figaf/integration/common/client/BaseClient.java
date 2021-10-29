@@ -641,6 +641,15 @@ public class BaseClient {
         Document doc = Jsoup.parse(html);
 
         Element logOnForm = doc.getElementById("logOnForm");
+        if (logOnForm == null) {
+            if (doc.getElementById("samlRedirect") != null) {
+                throw new ClientIntegrationException(
+                        String.format("It looks like the user is using SAP Universal ID. Figaf does not support it at the moment. Please create a user without SAP Universal ID. %s", html)
+                );
+            } else {
+                throw new ClientIntegrationException(String.format("Can't find logOnForm element on the page: %s", html));
+            }
+        }
         Elements inputElements = logOnForm.getElementsByTag("input");
 
         MultiValueMap<String, String> map = new LinkedMultiValueMap<>();
