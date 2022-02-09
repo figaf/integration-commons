@@ -48,11 +48,11 @@ public class RestTemplateWrapperHolder {
         );
     }
 
-    public void deleteRestTemplateWrapper(String key) {
+    public static void deleteRestTemplateWrapper(String key) {
         keyToRestTemplateWrapperMap.remove(key);
     }
 
-    public void deleteRestTemplateWrapperSingletonWithInterceptors(String key) {
+    public static void deleteRestTemplateWrapperSingletonWithInterceptors(String key) {
         keyToRestTemplateWrapperWithInterceptorsMap.remove(key);
     }
 

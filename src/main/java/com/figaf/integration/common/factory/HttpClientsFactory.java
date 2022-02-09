@@ -4,13 +4,14 @@ import com.github.markusbernhardt.proxy.ProxySearch;
 import lombok.Getter;
 import lombok.ToString;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.http.HttpHost;
 import org.apache.http.client.HttpClient;
 import org.apache.http.client.config.RequestConfig;
 import org.apache.http.conn.ssl.SSLConnectionSocketFactory;
 import org.apache.http.impl.client.HttpClientBuilder;
 import org.apache.http.impl.client.HttpClients;
+import org.apache.http.impl.conn.DefaultProxyRoutePlanner;
 import org.apache.http.impl.conn.SystemDefaultRoutePlanner;
-import org.springframework.http.client.ClientHttpRequestInterceptor;
 import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
 import org.springframework.http.client.support.BasicAuthenticationInterceptor;
 import org.springframework.http.converter.StringHttpMessageConverter;
@@ -31,25 +32,34 @@ public class HttpClientsFactory {
     private final int connectionRequestTimeout;
     private final int connectTimeout;
     private final int socketTimeout;
+    private final boolean useForOnPremiseIntegration;
+
+    private final OAuthHttpRequestInterceptor oAuthHttpRequestInterceptor;
+    private final DefaultProxyRoutePlanner defaultProxyRoutePlanner;
 
     public HttpClientsFactory() {
         this.useProxyForConnections = false;
+        this.useForOnPremiseIntegration = false;
         this.connectionRequestTimeout = 300000;
         this.connectTimeout = 300000;
         this.socketTimeout = 300000;
+        this.oAuthHttpRequestInterceptor = null;
+        this.defaultProxyRoutePlanner = null;
     }
 
     public HttpClientsFactory(
-        boolean useProxyForConnections,
-        int connectionRequestTimeout,
-        int connectTimeout,
-        int socketTimeout
+            boolean useProxyForConnections,
+            int connectionRequestTimeout,
+            int connectTimeout,
+            int socketTimeout,
+            boolean useForOnPremiseIntegration
     ) {
         log.info("useProxyForConnections = {}", useProxyForConnections);
         this.useProxyForConnections = useProxyForConnections;
         this.connectionRequestTimeout = connectionRequestTimeout;
         this.connectTimeout = connectTimeout;
         this.socketTimeout = socketTimeout;
+        this.useForOnPremiseIntegration = useForOnPremiseIntegration;
         if (this.useProxyForConnections) {
             // proxy config
             // Use the static factory method getDefaultProxySearch to create a proxy search instance
@@ -69,21 +79,43 @@ public class HttpClientsFactory {
             }
         }
 
+        if (!this.useForOnPremiseIntegration) {
+            this.oAuthHttpRequestInterceptor = null;
+            this.defaultProxyRoutePlanner = null;
+            return;
+        }
+
+        CloudConnectorParameters cloudConnectorParameters = CloudConnectorParameters.getInstance();
+        if (cloudConnectorParameters == null) {
+            this.oAuthHttpRequestInterceptor = null;
+            this.defaultProxyRoutePlanner = null;
+            return;
+        }
+
+        this.oAuthHttpRequestInterceptor = new OAuthHttpRequestInterceptor(cloudConnectorParameters);
+
+        HttpHost proxy = new HttpHost(cloudConnectorParameters.getConnectionProxyHost(), cloudConnectorParameters.getConnectionProxyPort());
+        this.defaultProxyRoutePlanner = new DefaultProxyRoutePlanner(proxy);
+
+        log.info("CloudConnectorParameters are applied: {}", cloudConnectorParameters);
     }
 
     public HttpClientBuilder getHttpClientBuilder() {
         HttpClientBuilder httpClientBuilder = HttpClients.custom();
         RequestConfig requestConfig = RequestConfig.custom()
-            .setConnectionRequestTimeout(connectionRequestTimeout)
-            .setConnectTimeout(connectTimeout)
-            .setSocketTimeout(socketTimeout)
-            .build();
+                .setConnectionRequestTimeout(connectionRequestTimeout)
+                .setConnectTimeout(connectTimeout)
+                .setSocketTimeout(socketTimeout)
+                .build();
         httpClientBuilder.setDefaultRequestConfig(requestConfig);
-        if (this.useProxyForConnections) {
-            return httpClientBuilder.setRoutePlanner(new SystemDefaultRoutePlanner(ProxySelector.getDefault()));
-        } else {
-            return httpClientBuilder;
+        if (useProxyForConnections) {
+            httpClientBuilder.setRoutePlanner(new SystemDefaultRoutePlanner(ProxySelector.getDefault()));
         }
+        if (useForOnPremiseIntegration) {
+            httpClientBuilder.addInterceptorFirst(oAuthHttpRequestInterceptor);
+            httpClientBuilder.setRoutePlanner(defaultProxyRoutePlanner);
+        }
+        return httpClientBuilder;
     }
 
     public HttpClientBuilder getHttpClientBuilder(SSLConnectionSocketFactory sslConnectionSocketFactory) {
