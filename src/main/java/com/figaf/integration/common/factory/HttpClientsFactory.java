@@ -33,16 +33,51 @@ public class HttpClientsFactory {
     private final int connectTimeout;
     private final int socketTimeout;
     private final boolean useForOnPremiseIntegration;
+    private final String locationId;
 
-    private final OAuthHttpRequestInterceptor oAuthHttpRequestInterceptor;
-    private final DefaultProxyRoutePlanner defaultProxyRoutePlanner;
+    private OAuthHttpRequestInterceptor oAuthHttpRequestInterceptor;
+    private DefaultProxyRoutePlanner defaultProxyRoutePlanner;
+
+    public static HttpClientsFactory getForOnPremiseIntegration(
+            boolean useProxyForConnections,
+            int connectionRequestTimeout,
+            int connectTimeout,
+            int socketTimeout,
+            String locationId
+    ) {
+        return new HttpClientsFactory(
+                useProxyForConnections,
+                connectionRequestTimeout,
+                connectTimeout,
+                socketTimeout,
+                true,
+                locationId
+        );
+    }
+
+    public static HttpClientsFactory getForOnCloudIntegration(
+            boolean useProxyForConnections,
+            int connectionRequestTimeout,
+            int connectTimeout,
+            int socketTimeout
+    ) {
+        return new HttpClientsFactory(
+                useProxyForConnections,
+                connectionRequestTimeout,
+                connectTimeout,
+                socketTimeout,
+                false,
+                null
+        );
+    }
 
     public HttpClientsFactory() {
         this.useProxyForConnections = false;
-        this.useForOnPremiseIntegration = false;
         this.connectionRequestTimeout = 300000;
         this.connectTimeout = 300000;
         this.socketTimeout = 300000;
+        this.useForOnPremiseIntegration = false;
+        this.locationId = null;
         this.oAuthHttpRequestInterceptor = null;
         this.defaultProxyRoutePlanner = null;
     }
@@ -51,15 +86,38 @@ public class HttpClientsFactory {
             boolean useProxyForConnections,
             int connectionRequestTimeout,
             int connectTimeout,
-            int socketTimeout,
-            boolean useForOnPremiseIntegration
+            int socketTimeout
     ) {
         log.info("useProxyForConnections = {}", useProxyForConnections);
         this.useProxyForConnections = useProxyForConnections;
         this.connectionRequestTimeout = connectionRequestTimeout;
         this.connectTimeout = connectTimeout;
         this.socketTimeout = socketTimeout;
+        this.useForOnPremiseIntegration = false;
+        this.locationId = null;
+        initProxy();
+    }
+
+    public HttpClientsFactory(
+            boolean useProxyForConnections,
+            int connectionRequestTimeout,
+            int connectTimeout,
+            int socketTimeout,
+            boolean useForOnPremiseIntegration,
+            String locationId
+    ) {
+        log.info("useProxyForConnections = {}, useForOnPremiseIntegration = {}, locationId = {}", useProxyForConnections, useForOnPremiseIntegration, locationId);
+        this.useProxyForConnections = useProxyForConnections;
+        this.connectionRequestTimeout = connectionRequestTimeout;
+        this.connectTimeout = connectTimeout;
+        this.socketTimeout = socketTimeout;
         this.useForOnPremiseIntegration = useForOnPremiseIntegration;
+        this.locationId = locationId;
+        initProxy();
+        applyCloudConnectorParameters(locationId);
+    }
+
+    private void initProxy() {
         if (this.useProxyForConnections) {
             // proxy config
             // Use the static factory method getDefaultProxySearch to create a proxy search instance
@@ -78,7 +136,9 @@ public class HttpClientsFactory {
                 log.info("Proxy settings were not found");
             }
         }
+    }
 
+    private void applyCloudConnectorParameters(String locationId) {
         if (!this.useForOnPremiseIntegration) {
             this.oAuthHttpRequestInterceptor = null;
             this.defaultProxyRoutePlanner = null;
@@ -92,7 +152,7 @@ public class HttpClientsFactory {
             return;
         }
 
-        this.oAuthHttpRequestInterceptor = new OAuthHttpRequestInterceptor(cloudConnectorParameters);
+        this.oAuthHttpRequestInterceptor = new OAuthHttpRequestInterceptor(cloudConnectorParameters, locationId);
 
         HttpHost proxy = new HttpHost(cloudConnectorParameters.getConnectionProxyHost(), cloudConnectorParameters.getConnectionProxyPort());
         this.defaultProxyRoutePlanner = new DefaultProxyRoutePlanner(proxy);

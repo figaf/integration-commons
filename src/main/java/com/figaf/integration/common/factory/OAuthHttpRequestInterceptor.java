@@ -1,6 +1,7 @@
 package com.figaf.integration.common.factory;
 
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.http.HttpRequest;
 import org.apache.http.HttpRequestInterceptor;
 import org.apache.http.protocol.HttpContext;
@@ -21,10 +22,13 @@ import java.time.Instant;
 class OAuthHttpRequestInterceptor implements HttpRequestInterceptor {
 
     private final CloudConnectorParameters cloudConnectorParameters;
+    private final String locationId;
+
     private OAuth2AccessToken accessToken;
 
-    public OAuthHttpRequestInterceptor(CloudConnectorParameters cloudConnectorParameters) {
+    public OAuthHttpRequestInterceptor(CloudConnectorParameters cloudConnectorParameters, String locationId) {
         this.cloudConnectorParameters = cloudConnectorParameters;
+        this.locationId = locationId;
     }
 
     @Override
@@ -38,6 +42,9 @@ class OAuthHttpRequestInterceptor implements HttpRequestInterceptor {
                 accessToken = getToken(cloudConnectorParameters);
             }
             request.addHeader("Proxy-Authorization", String.format("%s %s", accessToken.getTokenType().getValue(), accessToken.getTokenValue()));
+            if (StringUtils.isNotEmpty(locationId)) {
+                request.addHeader("SAP-Connectivity-SCC-Location_ID", locationId);
+            }
         }
     }
 
