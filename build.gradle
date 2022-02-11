@@ -4,7 +4,7 @@ plugins {
 }
 
 group = 'com.github.figaf'
-version = '1.11'
+version = '1.12'
 
 repositories {
     mavenLocal()
@@ -21,6 +21,7 @@ dependencies {
     api 'commons-io:commons-io:2.5'
     api 'org.apache.httpcomponents:httpclient:4.5.3'
     api 'org.springframework:spring-web:5.1.4.RELEASE'
+    api 'org.springframework.security:spring-security-oauth2-client:5.3.5.RELEASE'
     api 'org.json:json:20180813'
     api 'com.fasterxml.jackson.dataformat:jackson-dataformat-xml:2.9.8'
 
