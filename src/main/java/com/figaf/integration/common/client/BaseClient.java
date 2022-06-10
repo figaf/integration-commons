@@ -9,6 +9,7 @@ import com.figaf.integration.common.factory.RestTemplateWrapperFactory;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
@@ -22,10 +23,7 @@ import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.RestTemplate;
 
 import java.net.*;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -211,6 +209,14 @@ public class BaseClient {
                 requestEntity,
                 responseHandlerCallback
             );
+        } catch (HttpClientErrorException.NotFound notFoundException) {
+            log.debug("Can't executeDeletePublicApi (NotFound error): {}", ExceptionUtils.getMessage(notFoundException));
+            try {
+                return responseHandlerCallback.apply(null);
+            } catch (Exception ex) {
+                log.error("Can't apply responseHandlerCallback: ", ex);
+                throw new ClientIntegrationException(ex);
+            }
         } catch (Exception ex) {
             log.error("Can't executeDeletePublicApi: ", ex);
             throw new ClientIntegrationException(ex);
