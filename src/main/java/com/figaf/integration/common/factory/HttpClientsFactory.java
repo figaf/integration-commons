@@ -192,7 +192,7 @@ public class HttpClientsFactory {
     }
 
     public HttpComponentsClientHttpRequestFactory getHttpComponentsClientHttpRequestFactory() {
-        return new HttpComponentsClientHttpRequestFactory(createHttpClient());
+        return new CustomHttpComponentsClientHttpRequestFactory(createHttpClient());
     }
 
     public RestTemplate createRestTemplate(BasicAuthenticationInterceptor basicAuthenticationInterceptor) {
