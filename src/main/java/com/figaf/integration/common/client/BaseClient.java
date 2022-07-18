@@ -456,10 +456,16 @@ public class BaseClient {
                 }
                 redirectUrlReceivedAfterSuccessfulAuthorization = authorizeViaSamlAndGetLocationHeader(restTemplateWrapperKey, responseBodyAsString, samlRedirectUrl);
             } else {
-
                 String authorizationPageContent = getAuthorizationPageContent(restTemplateWrapperKey, authorizationUrl);
                 String loginPageUrl = getLoginPageUrlFromAuthorizationPage(authorizationPageContent);
                 if (loginPageUrl != null) {
+                    try {
+                        new URL(loginPageUrl);
+                    } catch (MalformedURLException ex) {
+                        log.warn("fetched login page url is not valid: {}. It will be built automatically", loginPageUrl);
+                        loginPageUrl = buildDefaultLoginPageUrl(authorizationUrl);
+                        log.info("built login page url: {}", loginPageUrl);
+                    }
                     ResponseEntity<String> loginPageContentResponseEntity = getLoginPageContent(restTemplateWrapperKey, loginPageUrl);
                     MultiValueMap<String, String> loginFormData = buildLoginFormDataForSso(requestContext, loginPageContentResponseEntity.getBody());
                     redirectUrlReceivedAfterSuccessfulAuthorization = authorizeAndGetLocationHeader(requestContext, loginFormData, requestContext.getSsoUrl(), null);
@@ -490,6 +496,17 @@ public class BaseClient {
             );
 
         }
+    }
+
+    private String buildDefaultLoginPageUrl(String authorizationUrl) throws MalformedURLException {
+        String loginPageUrl;
+        URL authorizationUrlObj = new URL(authorizationUrl);
+        StringBuilder loginPageUrlBuilder = new StringBuilder();
+        loginPageUrlBuilder.append(authorizationUrlObj.getProtocol()).append("://");
+        loginPageUrlBuilder.append(authorizationUrlObj.getAuthority());
+        loginPageUrlBuilder.append("/login?login_hint=%7B%22origin%22%3A%22sap.default%22%7D");
+        loginPageUrl = loginPageUrlBuilder.toString();
+        return loginPageUrl;
     }
 
     private String getAuthorizationPageContent(String restTemplateWrapperKey, String url) throws URISyntaxException {
