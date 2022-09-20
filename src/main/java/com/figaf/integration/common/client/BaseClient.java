@@ -72,6 +72,9 @@ public class BaseClient {
     }
 
     public <R> R executeGet(RequestContext requestContext, String path, ResponseHandlerCallback<R, String> responseHandlerCallback) {
+        if(requestContext.getAuthenticationType().equals(AuthenticationType.OAUTH)){
+            return executeGetPublicApiAndReturnResponseBody(requestContext, path, responseHandlerCallback);
+        }
         return executeGet(requestContext, path, responseHandlerCallback, String.class);
     }
 
