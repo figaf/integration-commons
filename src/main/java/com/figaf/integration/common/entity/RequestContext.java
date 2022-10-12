@@ -20,6 +20,10 @@ public class RequestContext {
     private String loginPageUrl;
     private String ssoUrl;
 
+    private boolean useCustomIdp;
+    private String samlUrl;
+    private String idpName;
+
     private String oauthUrl;
     private String clientId;
     private String clientSecret;
