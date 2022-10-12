@@ -662,7 +662,7 @@ public class BaseClient {
     }
 
     private String calculateLoginPageUrlForSaml(RequestContext requestContext, String authorizationUrl) {
-        if (requestContext.getLoginPageUrl() != null) {
+        if (StringUtils.isNotEmpty(requestContext.getLoginPageUrl())) {
             return requestContext.getLoginPageUrl();
         }
         return String.format("%1$s/saml/discovery?returnIDParam=idp&entityID=%1$s&idp=%2$s&isPassive=true",
