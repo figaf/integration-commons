@@ -644,14 +644,18 @@ public class BaseClient {
     private void authorizeViaCustomIdpProvider(RequestContext requestContext, String authorizationUrl) throws URISyntaxException {
         RestTemplateWrapper restTemplateWrapper = restTemplateWrapperHolder.getOrCreateRestTemplateWrapperSingleton(requestContext.getRestTemplateWrapperKey());
 
-        URI uri = new URI(authorizationUrl);
-        String protocol = uri.getScheme();
-        String authority = uri.getAuthority();
-        String authorizationBaseUrl = String.format("%s://%s", protocol, authority);
+        String authorizationBaseUrl = getBaseUrl(authorizationUrl);
 
         String samlRequestId = initiateSamlRequest(restTemplateWrapper, requestContext, authorizationBaseUrl);
         String signedSamlResponse = getSignedSamlResponse(restTemplateWrapper, requestContext, samlRequestId);
         authenticateUsingSamlResponse(restTemplateWrapper, requestContext, signedSamlResponse, authorizationBaseUrl);
+    }
+
+    private String getBaseUrl(String url) throws URISyntaxException {
+        URI uri = new URI(url);
+        String protocol = uri.getScheme();
+        String authority = uri.getAuthority();
+        return String.format("%s://%s", protocol, authority);
     }
 
     private String initiateSamlRequest(RestTemplateWrapper restTemplateWrapper, RequestContext requestContext, String authorizationBaseUrl) throws URISyntaxException {
@@ -672,11 +676,26 @@ public class BaseClient {
     }
 
     private String getSignedSamlResponse(RestTemplateWrapper restTemplateWrapper, RequestContext requestContext, String samlRequestId) throws URISyntaxException {
-        RequestEntity requestEntity = new RequestEntity(HttpMethod.GET, new URI(String.format("%s/%s", requestContext.getSamlUrl(), samlRequestId)));
+        String accessToken = getAccessTokenForCustomIdp(restTemplateWrapper, requestContext);
+        HttpHeaders httpHeaders = new HttpHeaders();
+        httpHeaders.setBearerAuth(accessToken);
+        RequestEntity requestEntity = new RequestEntity(httpHeaders, HttpMethod.GET, new URI(String.format("%s/%s", requestContext.getSamlUrl(), samlRequestId)));
         ResponseEntity<String> response = restTemplateWrapper.getRestTemplate().exchange(requestEntity, String.class);
         return response.getBody();
     }
 
+    private String getAccessTokenForCustomIdp(RestTemplateWrapper restTemplateWrapper, RequestContext requestContext) throws URISyntaxException {
+        String oauthTokenUrl = String.format("%s%s", getBaseUrl(requestContext.getSamlUrl()), "/oauth/token");
+        MultiValueMap<String, String> requestBody = new LinkedMultiValueMap<>();
+        requestBody.add("grant_type", "client_credentials");
+        requestBody.add("scope", "idp:sign");
+        HttpHeaders httpHeaders = new HttpHeaders();
+        httpHeaders.setAccept(Collections.singletonList(MediaType.APPLICATION_JSON));
+        httpHeaders.setBasicAuth(requestContext.getIdpApiClientId(), requestContext.getIdpApiClientSecret());
+        HttpEntity<MultiValueMap<String, String>> request = new HttpEntity<>(requestBody, httpHeaders);
+        ResponseEntity<Map> responseEntity = restTemplateWrapper.getRestTemplate().postForEntity(oauthTokenUrl, request, Map.class);
+        return (String) responseEntity.getBody().get("access_token");
+    }
     private void authenticateUsingSamlResponse(RestTemplateWrapper restTemplateWrapper, RequestContext requestContext, String signedSamlResponse, String authorizationBaseUrl) {
         MultiValueMap<String, String> requestBody = new LinkedMultiValueMap<>();
         requestBody.add("SAMLResponse", signedSamlResponse);
