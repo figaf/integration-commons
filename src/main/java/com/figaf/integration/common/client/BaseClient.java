@@ -572,6 +572,9 @@ public class BaseClient {
             String redirectUrlReceivedAfterSuccessfulAuthorization;
 
             if (requestContext.isUseCustomIdp()) {
+                if (StringUtils.isEmpty(requestContext.getSamlUrl())) {
+                    throw new ClientIntegrationException("SAML Url is empty. Please generate an Entity Descriptor in the Figaf tool and upload a new Trust Configuration in your SAP cockpit");
+                }
                 authorizeViaCustomIdpProvider(requestContext, authorizationUrl);
                 redirectUrlReceivedAfterSuccessfulAuthorization = authorizationUrl;
             } else if (StringUtils.isNotEmpty(requestContext.getLoginPageUrl())) {
@@ -647,6 +650,9 @@ public class BaseClient {
         String authorizationBaseUrl = getBaseUrl(authorizationUrl);
 
         String samlRequestId = initiateSamlRequest(restTemplateWrapper, requestContext, authorizationBaseUrl);
+        if (samlRequestId.startsWith("{\"app\"")) {
+            throw new ClientIntegrationException(String.format("Can't get SAML request ID successfully. Probably you need to create a Trust configuration in your SAP cockpit: %s", samlRequestId));
+        }
         String signedSamlResponse = getSignedSamlResponse(restTemplateWrapper, requestContext, samlRequestId);
         authenticateUsingSamlResponse(restTemplateWrapper, requestContext, signedSamlResponse, authorizationBaseUrl);
     }
