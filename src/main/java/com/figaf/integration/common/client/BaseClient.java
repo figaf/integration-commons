@@ -571,7 +571,10 @@ public class BaseClient {
             String restTemplateWrapperKey = requestContext.getRestTemplateWrapperKey();
             String redirectUrlReceivedAfterSuccessfulAuthorization;
 
-            if (StringUtils.isNotEmpty(requestContext.getLoginPageUrl())) {
+            if (requestContext.isUseCustomIdp()) {
+                authorizeViaCustomIdpProvider(requestContext, authorizationUrl);
+                redirectUrlReceivedAfterSuccessfulAuthorization = authorizationUrl;
+            } else if (StringUtils.isNotEmpty(requestContext.getLoginPageUrl())) {
                 //if we have loginPageUrl, the next call (getAuthorizationPageContent) is needed only for receiving cookies
                 getAuthorizationPageContent(restTemplateWrapperKey, authorizationUrl);
                 ResponseEntity<String> loginPageContentResponseEntity = getLoginPageContent(restTemplateWrapperKey, requestContext.getLoginPageUrl());
@@ -635,6 +638,56 @@ public class BaseClient {
                     responseType
             );
 
+        }
+    }
+
+    private void authorizeViaCustomIdpProvider(RequestContext requestContext, String authorizationUrl) throws URISyntaxException {
+        RestTemplateWrapper restTemplateWrapper = restTemplateWrapperHolder.getOrCreateRestTemplateWrapperSingleton(requestContext.getRestTemplateWrapperKey());
+
+        URI uri = new URI(authorizationUrl);
+        String protocol = uri.getScheme();
+        String authority = uri.getAuthority();
+        String authorizationBaseUrl = String.format("%s://%s", protocol, authority);
+
+        String samlRequestId = initiateSamlRequest(restTemplateWrapper, requestContext, authorizationBaseUrl);
+        String signedSamlResponse = getSignedSamlResponse(restTemplateWrapper, requestContext, samlRequestId);
+        authenticateUsingSamlResponse(restTemplateWrapper, requestContext, signedSamlResponse, authorizationBaseUrl);
+    }
+
+    private String initiateSamlRequest(RestTemplateWrapper restTemplateWrapper, RequestContext requestContext, String authorizationBaseUrl) throws URISyntaxException {
+        String loginPageUrl = calculateLoginPageUrlForSaml(requestContext, authorizationBaseUrl);
+        RequestEntity requestEntity = new RequestEntity(HttpMethod.GET, new URI(loginPageUrl));
+        ResponseEntity<String> responseEntity = restTemplateWrapper.getRestTemplate().exchange(requestEntity, String.class);
+        return responseEntity.getBody();
+    }
+
+    private String calculateLoginPageUrlForSaml(RequestContext requestContext, String authorizationUrl) {
+        if (StringUtils.isNotEmpty(requestContext.getLoginPageUrl())) {
+            return requestContext.getLoginPageUrl();
+        }
+        return String.format("%1$s/saml/discovery?returnIDParam=idp&entityID=%1$s&idp=%2$s&isPassive=true",
+                authorizationUrl,
+                requestContext.getIdpName()
+        );
+    }
+
+    private String getSignedSamlResponse(RestTemplateWrapper restTemplateWrapper, RequestContext requestContext, String samlRequestId) throws URISyntaxException {
+        RequestEntity requestEntity = new RequestEntity(HttpMethod.GET, new URI(String.format("%s/%s", requestContext.getSamlUrl(), samlRequestId)));
+        ResponseEntity<String> response = restTemplateWrapper.getRestTemplate().exchange(requestEntity, String.class);
+        return response.getBody();
+    }
+
+    private void authenticateUsingSamlResponse(RestTemplateWrapper restTemplateWrapper, RequestContext requestContext, String signedSamlResponse, String authorizationBaseUrl) {
+        MultiValueMap<String, String> requestBody = new LinkedMultiValueMap<>();
+        requestBody.add("SAMLResponse", signedSamlResponse);
+        requestBody.add("RelayState", "cloudfoundry-uaa-sp");
+        HttpHeaders httpHeaders = new HttpHeaders();
+        HttpEntity<MultiValueMap<String, String>> request = new HttpEntity<>(requestBody, httpHeaders);
+        ResponseEntity<String> responseEntity = restTemplateWrapper.getRestTemplate().postForEntity(requestContext.getSsoUrl(), request, String.class);
+        URI location = responseEntity.getHeaders().getLocation();
+        if (location != null && "/saml_error".equals(location.toString())) {
+            ResponseEntity<String> samlErrorResponse = restTemplateWrapper.getRestTemplate().getForEntity(String.format("%s/saml_error", authorizationBaseUrl), String.class);
+            throw new ClientIntegrationException(String.format("SAML error happened: %s", samlErrorResponse.getBody()));
         }
     }
 
