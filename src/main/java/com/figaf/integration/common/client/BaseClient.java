@@ -2,6 +2,7 @@ package com.figaf.integration.common.client;
 
 import com.figaf.integration.common.client.support.OAuthTokenInterceptor;
 import com.figaf.integration.common.client.support.parser.CloudFoundryOAuthTokenParser;
+import com.figaf.integration.common.client.support.parser.SamlRequestParser;
 import com.figaf.integration.common.entity.*;
 import com.figaf.integration.common.exception.ClientIntegrationException;
 import com.figaf.integration.common.factory.HttpClientsFactory;
@@ -27,6 +28,7 @@ import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import static java.lang.String.format;
 import static java.util.Collections.singleton;
 import static java.util.Collections.singletonList;
 import static org.springframework.http.HttpMethod.DELETE;
@@ -649,12 +651,10 @@ public class BaseClient {
 
         String authorizationBaseUrl = getBaseUrl(authorizationUrl);
 
-        String samlRequestId = initiateSamlRequest(restTemplateWrapper, requestContext, authorizationBaseUrl);
-        if (samlRequestId.startsWith("{\"app\"")) {
-            throw new ClientIntegrationException(String.format("Can't get SAML request ID successfully. Probably you need to create a Trust configuration in your SAP cockpit: %s", samlRequestId));
-        }
+        List<String> cookies = new ArrayList<>();
+        String samlRequestId = initiateSamlRequest(requestContext, authorizationBaseUrl, cookies);
         String signedSamlResponse = getSignedSamlResponse(restTemplateWrapper, requestContext, samlRequestId);
-        authenticateUsingSamlResponse(restTemplateWrapper, requestContext, signedSamlResponse, authorizationBaseUrl);
+        authenticateUsingSamlResponse(restTemplateWrapper, requestContext, signedSamlResponse, authorizationBaseUrl, cookies);
     }
 
     private String getBaseUrl(String url) throws URISyntaxException {
@@ -664,11 +664,29 @@ public class BaseClient {
         return String.format("%s://%s", protocol, authority);
     }
 
-    private String initiateSamlRequest(RestTemplateWrapper restTemplateWrapper, RequestContext requestContext, String authorizationBaseUrl) throws URISyntaxException {
+    private String initiateSamlRequest(RequestContext requestContext, String authorizationBaseUrl, List<String> cookies) throws URISyntaxException {
         String loginPageUrl = calculateLoginPageUrlForSaml(requestContext, authorizationBaseUrl);
-        RequestEntity requestEntity = new RequestEntity(HttpMethod.GET, new URI(loginPageUrl));
-        ResponseEntity<String> responseEntity = restTemplateWrapper.getRestTemplate().exchange(requestEntity, String.class);
-        return responseEntity.getBody();
+
+        RestTemplate restTemplate = restTemplateWrapperFactory.createRestTemplateWrapperDisablingRedirect().getRestTemplate();
+
+        ResponseEntity<String> responseEntity = restTemplate.exchange(new RequestEntity(HttpMethod.GET, new URI(loginPageUrl)), String.class);
+        cookies.addAll(responseEntity.getHeaders().getOrEmpty(HttpHeaders.SET_COOKIE));
+        URI redirectUrl = responseEntity.getHeaders().getLocation();
+        if (redirectUrl == null) {
+            throw new ClientIntegrationException(format("Redirect URL is not found. Headers: %s, body: %s", responseEntity.getHeaders(), responseEntity.getBody()));
+        }
+        if (redirectUrl.toString().contains("/login?error=idp_not_found")) {
+            throw new ClientIntegrationException("IdP is not found. Please create a Trust configuration in your SAP cockpit.");
+        }
+
+        responseEntity = restTemplate.exchange(new RequestEntity(HttpMethod.GET, redirectUrl), String.class);
+
+        String samlRequest = SamlRequestParser.fetchSamlRequestHeader(responseEntity.getHeaders().getLocation());
+        if (samlRequest == null) {
+            throw new ClientIntegrationException(format("Can't fetch SAMLRequest parameter. Headers: %s, body: %s", responseEntity.getHeaders(), responseEntity.getBody()));
+        }
+
+        return SamlRequestParser.fetchSamlRequestId(samlRequest);
     }
 
     private String calculateLoginPageUrlForSaml(RequestContext requestContext, String authorizationUrl) {
@@ -685,7 +703,7 @@ public class BaseClient {
         String accessToken = getAccessTokenForCustomIdp(restTemplateWrapper, requestContext);
         HttpHeaders httpHeaders = new HttpHeaders();
         httpHeaders.setBearerAuth(accessToken);
-        RequestEntity requestEntity = new RequestEntity(httpHeaders, HttpMethod.GET, new URI(String.format("%s/%s", requestContext.getSamlUrl(), samlRequestId)));
+        RequestEntity requestEntity = new RequestEntity(httpHeaders, HttpMethod.GET, new URI(String.format("%s/%s/%s", requestContext.getSamlUrl(), requestContext.getFigafAgentId(), samlRequestId)));
         ResponseEntity<String> response = restTemplateWrapper.getRestTemplate().exchange(requestEntity, String.class);
         return response.getBody();
     }
@@ -702,11 +720,16 @@ public class BaseClient {
         ResponseEntity<Map> responseEntity = restTemplateWrapper.getRestTemplate().postForEntity(oauthTokenUrl, request, Map.class);
         return (String) responseEntity.getBody().get("access_token");
     }
-    private void authenticateUsingSamlResponse(RestTemplateWrapper restTemplateWrapper, RequestContext requestContext, String signedSamlResponse, String authorizationBaseUrl) {
+
+    private void authenticateUsingSamlResponse(RestTemplateWrapper restTemplateWrapper, RequestContext requestContext, String signedSamlResponse, String authorizationBaseUrl, List<String> cookies) {
         MultiValueMap<String, String> requestBody = new LinkedMultiValueMap<>();
         requestBody.add("SAMLResponse", signedSamlResponse);
         requestBody.add("RelayState", "cloudfoundry-uaa-sp");
         HttpHeaders httpHeaders = new HttpHeaders();
+        if (CollectionUtils.isNotEmpty(cookies)) {
+            httpHeaders.add("Cookie", StringUtils.join(cookies, "; "));
+        }
+
         HttpEntity<MultiValueMap<String, String>> request = new HttpEntity<>(requestBody, httpHeaders);
         ResponseEntity<String> responseEntity = restTemplateWrapper.getRestTemplate().postForEntity(requestContext.getSsoUrl(), request, String.class);
         URI location = responseEntity.getHeaders().getLocation();
