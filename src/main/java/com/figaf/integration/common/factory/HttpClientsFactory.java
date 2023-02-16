@@ -162,6 +162,10 @@ public class HttpClientsFactory {
     }
 
     public HttpClientBuilder getHttpClientBuilder() {
+        return getHttpClientBuilder(false);
+    }
+
+    public HttpClientBuilder getHttpClientBuilder(boolean disableRedirect) {
         HttpClientBuilder httpClientBuilder = HttpClients.custom();
         RequestConfig requestConfig = RequestConfig.custom()
                 .setConnectionRequestTimeout(connectionRequestTimeout)
@@ -177,6 +181,9 @@ public class HttpClientsFactory {
             httpClientBuilder.addInterceptorFirst(oAuthHttpRequestInterceptor);
             httpClientBuilder.setRoutePlanner(defaultProxyRoutePlanner);
         }
+        if (disableRedirect) {
+            httpClientBuilder.disableRedirectHandling();
+        }
         return httpClientBuilder;
     }
 
@@ -186,7 +193,11 @@ public class HttpClientsFactory {
     }
 
     public HttpClient createHttpClient() {
-        return getHttpClientBuilder().build();
+        return createHttpClient(false);
+    }
+
+    public HttpClient createHttpClient(boolean disableRedirect) {
+        return getHttpClientBuilder(disableRedirect).build();
     }
 
     public HttpClient createHttpClient(SSLConnectionSocketFactory sslConnectionSocketFactory) {
@@ -194,7 +205,11 @@ public class HttpClientsFactory {
     }
 
     public HttpComponentsClientHttpRequestFactory getHttpComponentsClientHttpRequestFactory() {
-        return new CustomHttpComponentsClientHttpRequestFactory(createHttpClient());
+        return getHttpComponentsClientHttpRequestFactory(false);
+    }
+
+    public HttpComponentsClientHttpRequestFactory getHttpComponentsClientHttpRequestFactory(boolean disableRedirect) {
+        return new CustomHttpComponentsClientHttpRequestFactory(createHttpClient(disableRedirect));
     }
 
     public RestTemplate createRestTemplate(BasicAuthenticationInterceptor basicAuthenticationInterceptor) {

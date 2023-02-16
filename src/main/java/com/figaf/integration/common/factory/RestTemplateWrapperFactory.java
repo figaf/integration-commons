@@ -26,7 +26,15 @@ public class RestTemplateWrapperFactory {
     private final HttpClientsFactory httpClientsFactory;
 
     public RestTemplateWrapper createRestTemplateWrapper() {
-        HttpComponentsClientHttpRequestFactory httpComponentsClientHttpRequestFactory = httpClientsFactory.getHttpComponentsClientHttpRequestFactory();
+        return createRestTemplateWrapper(false);
+    }
+
+    public RestTemplateWrapper createRestTemplateWrapperDisablingRedirect() {
+        return createRestTemplateWrapper(true);
+    }
+
+    public RestTemplateWrapper createRestTemplateWrapper(boolean disableRedirect) {
+        HttpComponentsClientHttpRequestFactory httpComponentsClientHttpRequestFactory = httpClientsFactory.getHttpComponentsClientHttpRequestFactory(disableRedirect);
         HttpClient httpClient = httpComponentsClientHttpRequestFactory.getHttpClient();
         RestTemplate restTemplate = new RestTemplate(httpComponentsClientHttpRequestFactory);
         restTemplate.getMessageConverters().add(0, new StringHttpMessageConverter(StandardCharsets.UTF_8));

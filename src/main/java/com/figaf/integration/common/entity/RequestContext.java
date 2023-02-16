@@ -22,6 +22,7 @@ public class RequestContext {
 
     private boolean useCustomIdp;
     private String samlUrl;
+    private String figafAgentId;
     private String idpName;
     private String idpApiClientId;
     private String idpApiClientSecret;
