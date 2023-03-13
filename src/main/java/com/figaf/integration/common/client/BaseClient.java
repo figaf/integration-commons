@@ -169,6 +169,7 @@ public class BaseClient {
             response = responseHandlerCallback.apply(responseBody);
         } catch (Exception ex) {
             log.error("Can't handle response body: ", ex);
+            throwSpecificExceptionIfSsoUrlIsWrong(requestContext, ex);
             throw new ClientIntegrationException(ex);
         }
 
@@ -206,6 +207,7 @@ public class BaseClient {
             }
         } catch (Exception ex) {
             log.error("Can't executeMethod: ", ex);
+            throwSpecificExceptionIfSsoUrlIsWrong(requestContext, ex);
             throw new ClientIntegrationException(ex);
         }
     }
@@ -588,6 +590,7 @@ public class BaseClient {
                 redirectUrlReceivedAfterSuccessfulAuthorization = authorizeAndGetLocationHeader(requestContext, loginFormData, requestContext.getSsoUrl(), cookies);
 
                 ResponseEntity<RESULT> responseEntity = executeRedirectRequestAfterSuccessfulAuthorization(
+                        requestContext,
                         restTemplateWrapperKey,
                         redirectUrlReceivedAfterSuccessfulAuthorization,
                         path,
@@ -635,6 +638,7 @@ public class BaseClient {
             }
 
             return executeRedirectRequestAfterSuccessfulAuthorization(
+                    requestContext,
                     restTemplateWrapperKey,
                     redirectUrlReceivedAfterSuccessfulAuthorization,
                     path,
@@ -731,11 +735,23 @@ public class BaseClient {
         }
 
         HttpEntity<MultiValueMap<String, String>> request = new HttpEntity<>(requestBody, httpHeaders);
-        ResponseEntity<String> responseEntity = restTemplateWrapper.getRestTemplate().postForEntity(requestContext.getSsoUrl(), request, String.class);
+        ResponseEntity<String> responseEntity;
+        try {
+            responseEntity = restTemplateWrapper.getRestTemplate().postForEntity(requestContext.getSsoUrl(), request, String.class);
+        } catch (HttpClientErrorException ex) {
+            log.error("Can't authenticate using SAML response: ", ex);
+            throwSpecificExceptionIfSsoUrlIsWrong(requestContext, ex);
+            throw ex;
+        }
+
         URI location = responseEntity.getHeaders().getLocation();
         if (location != null && "/saml_error".equals(location.toString())) {
             ResponseEntity<String> samlErrorResponse = restTemplateWrapper.getRestTemplate().getForEntity(String.format("%s/saml_error", authorizationBaseUrl), String.class);
-            throw new ClientIntegrationException(String.format("SAML error happened: %s", samlErrorResponse.getBody()));
+            StringBuilder errorMessageBuilder = new StringBuilder(format("SAML error happened: %s", samlErrorResponse.getBody()));
+            if ("{}".equals(samlErrorResponse.getBody())) {
+                errorMessageBuilder.append(". Check if relevant Trust configuration is uploaded to your SAP cockpit. It seems it doesn't match with the configuration in the Figaf app or 'Create Shadow Users During Logon' option is disabled.");
+            }
+            throw new ClientIntegrationException(errorMessageBuilder.toString());
         }
     }
 
@@ -850,6 +866,7 @@ public class BaseClient {
     }
 
     private <RESP> ResponseEntity<RESP> executeRedirectRequestAfterSuccessfulAuthorization(
+            RequestContext requestContext,
             String restTemplateWrapperKey,
             String url,
             String initialPath,
@@ -857,8 +874,8 @@ public class BaseClient {
             HttpHeaders additionalHeaders,
             Class<RESP> responseType
     ) throws Exception {
-        log.debug("#executeRedirectRequestAfterSuccessfulAuthorization(String restTemplateWrapperKey, String url, String initialPath, String signature, HttpHeaders additionalHeaders, Class<T> responseType): {}, {}, {}, {}, {}, {}",
-                restTemplateWrapperKey, url, initialPath, signature, additionalHeaders, responseType
+        log.debug("#executeRedirectRequestAfterSuccessfulAuthorization(RequestContext requestContext, String restTemplateWrapperKey, String url, String initialPath, String signature, HttpHeaders additionalHeaders, Class<T> responseType): {}, {}, {}, {}, {}, {}, {}",
+                requestContext, restTemplateWrapperKey, url, initialPath, signature, additionalHeaders, responseType
         );
 
         String cookie = String.format("fragmentAfterLogin=; locationAfterLogin=%s; signature=%s", URLEncoder.encode(initialPath, "UTF-8"), signature);
@@ -871,7 +888,16 @@ public class BaseClient {
         RequestEntity requestEntity = new RequestEntity(headers, HttpMethod.GET, new URI(url));
         RestTemplateWrapper restTemplateWrapper = restTemplateWrapperHolder.getOrCreateRestTemplateWrapperSingleton(restTemplateWrapperKey);
 
-        ResponseEntity<RESP> responseEntity = restTemplateWrapper.getRestTemplate().exchange(requestEntity, responseType);
+        ResponseEntity<RESP> responseEntity;
+        try {
+            responseEntity = restTemplateWrapper.getRestTemplate().exchange(requestEntity, responseType);
+        } catch (HttpClientErrorException.Forbidden ex) {
+            if (requestContext.isUseCustomIdp()) {
+                throw new ClientIntegrationException(String.format("Role Collection Mappings are not configured properly: %s", ExceptionUtils.getMessage(ex)));
+            } else {
+                throw ex;
+            }
+        }
         return responseEntity;
     }
 
@@ -1030,6 +1056,12 @@ public class BaseClient {
         httpHeaders.addAll(requestEntity.getHeaders());
         httpHeaders.put(X_CSRF_TOKEN, singletonList(csrfToken));
         return new HttpEntity<>(requestEntity.getBody(), httpHeaders);
+    }
+
+    private void throwSpecificExceptionIfSsoUrlIsWrong(RequestContext requestContext, Exception ex) {
+        if (requestContext.isUseCustomIdp() && !requestContext.getSsoUrl().contains("/saml/SSO/")) {
+            throw new ClientIntegrationException(String.format("SSO Url '%s' seems to be wrong (it should contain '/saml/SSO/'): %s", requestContext.getSsoUrl(), ExceptionUtils.getMessage(ex)));
+        }
     }
 
 }
