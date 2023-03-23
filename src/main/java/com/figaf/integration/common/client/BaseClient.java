@@ -891,9 +891,12 @@ public class BaseClient {
         ResponseEntity<RESP> responseEntity;
         try {
             responseEntity = restTemplateWrapper.getRestTemplate().exchange(requestEntity, responseType);
-        } catch (HttpClientErrorException.Forbidden ex) {
+        } catch (HttpClientErrorException.Forbidden | HttpClientErrorException.NotFound ex) {
             if (requestContext.isUseCustomIdp()) {
-                throw new ClientIntegrationException(String.format("Role Collection Mappings are not configured properly: %s", ExceptionUtils.getMessage(ex)));
+                throw new ClientIntegrationException(String.format("Please check that Role Collection Mappings are configured properly. " +
+                        "PI_Administrator, PI_Business_Expert and PI_Integration_Developer should be assigned to the Trust Configuration with the attribute 'Groups' and the value 'Admin'." +
+                        " Error message: %s", ExceptionUtils.getMessage(ex))
+                );
             } else {
                 throw ex;
             }
