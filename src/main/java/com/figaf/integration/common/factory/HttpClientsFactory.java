@@ -1,5 +1,6 @@
 package com.figaf.integration.common.factory;
 
+import com.figaf.integration.common.client.support.SapAirKeyHeaderInterceptor;
 import com.github.markusbernhardt.proxy.ProxySearch;
 import lombok.Getter;
 import lombok.ToString;
@@ -35,8 +36,10 @@ public class HttpClientsFactory {
     private final int socketTimeout;
     private final boolean useForOnPremiseIntegration;
     private final String locationId;
+    private final String sapAirKey;
 
     private OAuthHttpRequestInterceptor oAuthHttpRequestInterceptor;
+    private SapAirKeyHeaderInterceptor sapAirKeyHeaderInterceptor;
     private DefaultProxyRoutePlanner defaultProxyRoutePlanner;
 
     public static HttpClientsFactory getForOnPremiseIntegration(
@@ -44,7 +47,8 @@ public class HttpClientsFactory {
             int connectionRequestTimeout,
             int connectTimeout,
             int socketTimeout,
-            String locationId
+            String locationId,
+            String sapAirKey
     ) {
         return new HttpClientsFactory(
                 useProxyForConnections,
@@ -52,7 +56,8 @@ public class HttpClientsFactory {
                 connectTimeout,
                 socketTimeout,
                 true,
-                locationId
+                locationId,
+                sapAirKey
         );
     }
 
@@ -60,7 +65,8 @@ public class HttpClientsFactory {
             boolean useProxyForConnections,
             int connectionRequestTimeout,
             int connectTimeout,
-            int socketTimeout
+            int socketTimeout,
+            String sapAirKey
     ) {
         return new HttpClientsFactory(
                 useProxyForConnections,
@@ -68,7 +74,8 @@ public class HttpClientsFactory {
                 connectTimeout,
                 socketTimeout,
                 false,
-                null
+                null,
+                sapAirKey
         );
     }
 
@@ -79,8 +86,10 @@ public class HttpClientsFactory {
         this.socketTimeout = 300000;
         this.useForOnPremiseIntegration = false;
         this.locationId = null;
+        this.sapAirKey = null;
         this.oAuthHttpRequestInterceptor = null;
         this.defaultProxyRoutePlanner = null;
+        this.sapAirKeyHeaderInterceptor = null;
     }
 
     public HttpClientsFactory(
@@ -96,6 +105,27 @@ public class HttpClientsFactory {
         this.socketTimeout = socketTimeout;
         this.useForOnPremiseIntegration = false;
         this.locationId = null;
+        this.sapAirKey = null;
+        this.sapAirKeyHeaderInterceptor = null;
+        initProxy();
+    }
+
+    public HttpClientsFactory(
+            boolean useProxyForConnections,
+            int connectionRequestTimeout,
+            int connectTimeout,
+            int socketTimeout,
+            String sapAirKey
+    ) {
+        log.info("useProxyForConnections = {}", useProxyForConnections);
+        this.useProxyForConnections = useProxyForConnections;
+        this.connectionRequestTimeout = connectionRequestTimeout;
+        this.connectTimeout = connectTimeout;
+        this.socketTimeout = socketTimeout;
+        this.useForOnPremiseIntegration = false;
+        this.locationId = null;
+        this.sapAirKey = sapAirKey;
+        this.sapAirKeyHeaderInterceptor = new SapAirKeyHeaderInterceptor(this.sapAirKey);
         initProxy();
     }
 
@@ -105,7 +135,8 @@ public class HttpClientsFactory {
             int connectTimeout,
             int socketTimeout,
             boolean useForOnPremiseIntegration,
-            String locationId
+            String locationId,
+            String sapAirKey
     ) {
         log.info("useProxyForConnections = {}, useForOnPremiseIntegration = {}, locationId = {}", useProxyForConnections, useForOnPremiseIntegration, locationId);
         this.useProxyForConnections = useProxyForConnections;
@@ -114,6 +145,8 @@ public class HttpClientsFactory {
         this.socketTimeout = socketTimeout;
         this.useForOnPremiseIntegration = useForOnPremiseIntegration;
         this.locationId = locationId;
+        this.sapAirKey = sapAirKey;
+        this.sapAirKeyHeaderInterceptor = new SapAirKeyHeaderInterceptor(this.sapAirKey);
         initProxy();
         applyCloudConnectorParameters(locationId);
     }
@@ -183,6 +216,9 @@ public class HttpClientsFactory {
         }
         if (disableRedirect) {
             httpClientBuilder.disableRedirectHandling();
+        }
+        if (sapAirKeyHeaderInterceptor != null) {
+            httpClientBuilder.addInterceptorFirst(sapAirKeyHeaderInterceptor);
         }
         return httpClientBuilder;
     }
