@@ -576,6 +576,7 @@ public class BaseClient {
             String redirectUrlReceivedAfterSuccessfulAuthorization;
 
             if (requestContext.isUseCustomIdp()) {
+                //Not the best way to check that Entity Descriptor was generated and uploaded. Basically, SAML Url is not needed anymore for authentication from IRT deployment (it's still needed for the gradle plugins), but it defines if Entity Descriptor generation was done.
                 if (StringUtils.isEmpty(requestContext.getSamlUrl())) {
                     throw new ClientIntegrationException("SAML Url is empty. Please generate an Entity Descriptor in the Figaf tool and upload a new Trust Configuration in your SAP cockpit");
                 }
@@ -704,12 +705,18 @@ public class BaseClient {
     }
 
     private String getSignedSamlResponse(RestTemplateWrapper restTemplateWrapper, RequestContext requestContext, String samlRequestId) throws URISyntaxException {
-        String accessToken = getAccessTokenForCustomIdp(restTemplateWrapper, requestContext);
-        HttpHeaders httpHeaders = new HttpHeaders();
-        httpHeaders.setBearerAuth(accessToken);
-        RequestEntity requestEntity = new RequestEntity(httpHeaders, HttpMethod.GET, new URI(String.format("%s/%s/%s", requestContext.getSamlUrl(), requestContext.getFigafAgentId(), samlRequestId)));
-        ResponseEntity<String> response = restTemplateWrapper.getRestTemplate().exchange(requestEntity, String.class);
-        return response.getBody();
+        SamlResponseSigner samlResponseSigner = requestContext.getSamlResponseSigner();
+        //If it's not null, use it. Otherwise, request it via Rest API (relevant for the gradle plugins usage)
+        if (samlResponseSigner != null) {
+            return samlResponseSigner.sign(requestContext.getFigafAgentId(), samlRequestId);
+        } else {
+            String accessToken = getAccessTokenForCustomIdp(restTemplateWrapper, requestContext);
+            HttpHeaders httpHeaders = new HttpHeaders();
+            httpHeaders.setBearerAuth(accessToken);
+            RequestEntity requestEntity = new RequestEntity(httpHeaders, HttpMethod.GET, new URI(String.format("%s/%s/%s", requestContext.getSamlUrl(), requestContext.getFigafAgentId(), samlRequestId)));
+            ResponseEntity<String> response = restTemplateWrapper.getRestTemplate().exchange(requestEntity, String.class);
+            return response.getBody();
+        }
     }
 
     private String getAccessTokenForCustomIdp(RestTemplateWrapper restTemplateWrapper, RequestContext requestContext) throws URISyntaxException {
