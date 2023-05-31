@@ -125,6 +125,8 @@ public class BaseClient {
         RESULT response;
         try {
             response = responseHandlerCallback.apply(responseEntity.getBody());
+        } catch (ClientIntegrationException ex) {
+            throw ex;
         } catch (Exception ex) {
             log.error("Can't handle response body: ", ex);
             throw new ClientIntegrationException(ex);
@@ -143,6 +145,8 @@ public class BaseClient {
         RESULT response;
         try {
             response = responseHandlerCallback.apply(responseEntity);
+        } catch (ClientIntegrationException ex) {
+            throw ex;
         } catch (Exception ex) {
             log.error("Can't handle response body: ", ex);
             throw new ClientIntegrationException(ex);
@@ -167,6 +171,9 @@ public class BaseClient {
         RESULT response;
         try {
             response = responseHandlerCallback.apply(responseBody);
+        } catch (ClientIntegrationException ex) {
+            throwSpecificExceptionIfSsoUrlIsWrong(requestContext, ex);
+            throw ex;
         } catch (Exception ex) {
             log.error("Can't handle response body: ", ex);
             throwSpecificExceptionIfSsoUrlIsWrong(requestContext, ex);
@@ -205,6 +212,9 @@ public class BaseClient {
                 String url = buildUrl(requestContext, pathForMainRequest);
                 return responseHandlerCallback.apply(url, token, restTemplateWrapper);
             }
+        } catch (ClientIntegrationException ex) {
+            throwSpecificExceptionIfSsoUrlIsWrong(requestContext, ex);
+            throw ex;
         } catch (Exception ex) {
             log.error("Can't executeMethod: ", ex);
             throwSpecificExceptionIfSsoUrlIsWrong(requestContext, ex);
@@ -235,6 +245,8 @@ public class BaseClient {
                     responseHandlerCallback,
                     String.class
             );
+        } catch (ClientIntegrationException ex) {
+            throw ex;
         } catch (Exception ex) {
             log.error("Can't executeMethodPublicApi: ", ex);
             throw new ClientIntegrationException(ex);
@@ -264,6 +276,8 @@ public class BaseClient {
                     responseHandlerCallback,
                     String.class
             );
+        } catch (ClientIntegrationException ex) {
+            throw ex;
         } catch (Exception ex) {
             log.error("Can't executeMethodPublicApi: ", ex);
             throw new ClientIntegrationException(ex);
@@ -294,6 +308,8 @@ public class BaseClient {
                     responseHandlerCallback,
                     bodyType
             );
+        } catch (ClientIntegrationException ex) {
+            throw ex;
         } catch (Exception ex) {
             log.error("Can't executeMethodPublicApi: ", ex);
             throw new ClientIntegrationException(ex);
@@ -325,10 +341,14 @@ public class BaseClient {
             log.debug("Can't executeDeletePublicApi (NotFound error): {}", ExceptionUtils.getMessage(notFoundException));
             try {
                 return responseHandlerCallback.apply(null);
+            } catch (ClientIntegrationException ex) {
+                throw ex;
             } catch (Exception ex) {
                 log.error("Can't apply responseHandlerCallback: ", ex);
                 throw new ClientIntegrationException(ex);
             }
+        } catch (ClientIntegrationException ex) {
+            throw ex;
         } catch (Exception ex) {
             log.error("Can't executeDeletePublicApi: ", ex);
             throw new ClientIntegrationException(ex);
@@ -451,6 +471,8 @@ public class BaseClient {
 
             String token = responseEntity.getHeaders().getFirst(X_CSRF_TOKEN);
             return token;
+        } catch (ClientIntegrationException ex) {
+            throw ex;
         } catch (Exception ex) {
             log.error("Can't retrieveToken: ", ex);
             throw new ClientIntegrationException(ex);
@@ -486,6 +508,8 @@ public class BaseClient {
             RestTemplateWrapper restTemplateWrapper = restTemplateWrapperHolder.getOrCreateRestTemplateWrapperSingleton(requestContext.getRestTemplateWrapperKey());
             ResponseEntity<RESULT> responseEntity = restTemplateWrapper.getRestTemplate().exchange(requestEntity, bodyType);
             return responseEntity;
+        } catch (ClientIntegrationException ex) {
+            throw ex;
         } catch (Exception ex) {
             String errorMessage = String.format("Can't execute GET request %s successfully: ", url);
             log.error(errorMessage, ex);
@@ -501,6 +525,8 @@ public class BaseClient {
             RequestEntity requestEntity = new RequestEntity(HttpMethod.GET, new URI(url));
             ResponseEntity<RESULT> responseEntity = restTemplateWithBasicAuth.exchange(requestEntity, bodyType);
             return responseEntity.getBody();
+        } catch (ClientIntegrationException ex) {
+            throw ex;
         } catch (Exception ex) {
             String errorMessage = String.format("Can't execute GET request %s successfully: ", url);
             log.error(errorMessage, ex);
@@ -551,6 +577,8 @@ public class BaseClient {
             } else {
                 throw ex;
             }
+        } catch (ClientIntegrationException ex) {
+            throw ex;
         } catch (Exception ex) {
             String errorMessage = String.format("Can't authorize and execute initial request on %s", path);
             log.error(errorMessage, ex);
@@ -576,6 +604,7 @@ public class BaseClient {
             String redirectUrlReceivedAfterSuccessfulAuthorization;
 
             if (requestContext.isUseCustomIdp()) {
+                //Not the best way to check that Entity Descriptor was generated and uploaded. Basically, SAML Url is not needed anymore for authentication from IRT deployment (it's still needed for the gradle plugins), but it defines if Entity Descriptor generation was done.
                 if (StringUtils.isEmpty(requestContext.getSamlUrl())) {
                     throw new ClientIntegrationException("SAML Url is empty. Please generate an Entity Descriptor in the Figaf tool and upload a new Trust Configuration in your SAP cockpit");
                 }
@@ -704,12 +733,18 @@ public class BaseClient {
     }
 
     private String getSignedSamlResponse(RestTemplateWrapper restTemplateWrapper, RequestContext requestContext, String samlRequestId) throws URISyntaxException {
-        String accessToken = getAccessTokenForCustomIdp(restTemplateWrapper, requestContext);
-        HttpHeaders httpHeaders = new HttpHeaders();
-        httpHeaders.setBearerAuth(accessToken);
-        RequestEntity requestEntity = new RequestEntity(httpHeaders, HttpMethod.GET, new URI(String.format("%s/%s/%s", requestContext.getSamlUrl(), requestContext.getFigafAgentId(), samlRequestId)));
-        ResponseEntity<String> response = restTemplateWrapper.getRestTemplate().exchange(requestEntity, String.class);
-        return response.getBody();
+        SamlResponseSigner samlResponseSigner = requestContext.getSamlResponseSigner();
+        //If it's not null, use it. Otherwise, request it via Rest API (relevant for the gradle plugins usage)
+        if (samlResponseSigner != null) {
+            return samlResponseSigner.sign(requestContext.getFigafAgentId(), samlRequestId);
+        } else {
+            String accessToken = getAccessTokenForCustomIdp(restTemplateWrapper, requestContext);
+            HttpHeaders httpHeaders = new HttpHeaders();
+            httpHeaders.setBearerAuth(accessToken);
+            RequestEntity requestEntity = new RequestEntity(httpHeaders, HttpMethod.GET, new URI(String.format("%s/%s/%s", requestContext.getSamlUrl(), requestContext.getFigafAgentId(), samlRequestId)));
+            ResponseEntity<String> response = restTemplateWrapper.getRestTemplate().exchange(requestEntity, String.class);
+            return response.getBody();
+        }
     }
 
     private String getAccessTokenForCustomIdp(RestTemplateWrapper restTemplateWrapper, RequestContext requestContext) throws URISyntaxException {

@@ -26,6 +26,7 @@ public class RequestContext {
     private String idpName;
     private String idpApiClientId;
     private String idpApiClientSecret;
+    private SamlResponseSigner samlResponseSigner;
 
     private String oauthUrl;
     private String clientId;
