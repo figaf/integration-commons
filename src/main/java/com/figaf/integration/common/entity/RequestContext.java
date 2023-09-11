@@ -9,7 +9,7 @@ import lombok.*;
 @AllArgsConstructor
 @Getter
 @Setter
-@ToString
+@ToString(exclude = {"idpApiClientSecret","clientSecret"})
 public class RequestContext {
 
     private ConnectionProperties connectionProperties;
