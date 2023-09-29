@@ -9,7 +9,7 @@ import lombok.*;
 @AllArgsConstructor
 @Getter
 @Setter
-@ToString(exclude = {"idpApiClientSecret","clientSecret"})
+@ToString(exclude = {"idpApiClientSecret", "clientSecret"})
 public class RequestContext {
 
     private ConnectionProperties connectionProperties;
@@ -18,8 +18,9 @@ public class RequestContext {
     private String restTemplateWrapperKey;
 
     private String loginPageUrl;
+    private String integrationSuiteUrl;
     private String ssoUrl;
-
+    private boolean isIntegrationSuite;
     private boolean useCustomIdp;
     private String samlUrl;
     private String figafAgentId;
