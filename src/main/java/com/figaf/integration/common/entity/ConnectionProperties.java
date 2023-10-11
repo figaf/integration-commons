@@ -62,4 +62,14 @@ public class ConnectionProperties implements Serializable {
         }
     }
 
+    public ConnectionProperties clone() {
+        return new ConnectionProperties(
+            this.getUsername(),
+            this.getPassword(),
+            this.getHost(),
+            this.getPort(),
+            this.getProtocol()
+        );
+    }
+
 }

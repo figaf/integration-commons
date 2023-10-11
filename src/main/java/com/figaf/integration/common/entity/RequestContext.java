@@ -9,18 +9,15 @@ import lombok.*;
 @AllArgsConstructor
 @Getter
 @Setter
-@ToString(exclude = {"idpApiClientSecret", "clientSecret"})
+@ToString(exclude = {"idpApiClientSecret", "clientSecret", "samlResponseSigner"})
 public class RequestContext {
 
     private ConnectionProperties connectionProperties;
     private CloudPlatformType cloudPlatformType;
     private Platform platform;
     private String restTemplateWrapperKey;
-
     private String loginPageUrl;
-    private String integrationSuiteUrl;
     private String ssoUrl;
-    private boolean isIntegrationSuite;
     private boolean useCustomIdp;
     private String samlUrl;
     private String figafAgentId;
@@ -28,14 +25,24 @@ public class RequestContext {
     private String idpApiClientId;
     private String idpApiClientSecret;
     private SamlResponseSigner samlResponseSigner;
-
     private String oauthUrl;
     private String clientId;
     private String clientSecret;
     private AuthenticationType authenticationType;
 
-    public RequestContext(ConnectionProperties connectionProperties, CloudPlatformType cloudPlatformType, Platform platform, String restTemplateWrapperKey) {
-        this.connectionProperties = connectionProperties;
+    public RequestContext(
+        ConnectionProperties connectionProperties,
+        CloudPlatformType cloudPlatformType,
+        Platform platform,
+        String restTemplateWrapperKey
+    ) {
+        if (connectionProperties == null) {
+            throw new IllegalArgumentException("Connection properties must be defined");
+        }
+        if (platform == null) {
+            throw new IllegalArgumentException("Platform must be defined");
+        }
+        this.connectionProperties = connectionProperties.clone();
         this.cloudPlatformType = cloudPlatformType;
         this.platform = platform;
         this.restTemplateWrapperKey = restTemplateWrapperKey;
@@ -100,5 +107,9 @@ public class RequestContext {
             restTemplateWrapperKey = "";
         }
         return restTemplateWrapperKey;
+    }
+
+    public void setConnectionProperties(ConnectionProperties connectionProperties) {
+        this.connectionProperties = connectionProperties.clone();
     }
 }
