@@ -61,5 +61,4 @@ public class ConnectionProperties implements Serializable {
             return buildUrl(protocol, host, port);
         }
     }
-
 }
