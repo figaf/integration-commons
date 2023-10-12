@@ -36,13 +36,7 @@ public class RequestContext {
         Platform platform,
         String restTemplateWrapperKey
     ) {
-        if (connectionProperties == null) {
-            throw new IllegalArgumentException("Connection properties must be defined");
-        }
-        if (platform == null) {
-            throw new IllegalArgumentException("Platform must be defined");
-        }
-        this.connectionProperties = connectionProperties.clone();
+        this.connectionProperties = connectionProperties;
         this.cloudPlatformType = cloudPlatformType;
         this.platform = platform;
         this.restTemplateWrapperKey = restTemplateWrapperKey;
@@ -50,55 +44,55 @@ public class RequestContext {
 
     public static RequestContext pro(ConnectionProperties connectionProperties) {
         return new RequestContext(
-                connectionProperties,
-                null,
-                Platform.PRO,
-                null
+            connectionProperties,
+            null,
+            Platform.PRO,
+            null
         );
     }
 
     public static RequestContext cpiNeo(ConnectionProperties connectionProperties) {
         return new RequestContext(
-                connectionProperties,
-                CloudPlatformType.NEO,
-                Platform.CPI,
-                null
+            connectionProperties,
+            CloudPlatformType.NEO,
+            Platform.CPI,
+            null
         );
     }
 
     public static RequestContext cpiCloudFoundry(ConnectionProperties connectionProperties, String restTemplateWrapperKey) {
         return new RequestContext(
-                connectionProperties,
-                CloudPlatformType.CLOUD_FOUNDRY,
-                Platform.CPI,
-                restTemplateWrapperKey
+            connectionProperties,
+            CloudPlatformType.CLOUD_FOUNDRY,
+            Platform.CPI,
+            restTemplateWrapperKey
         );
     }
 
     public static RequestContext apiMgmtNeo(ConnectionProperties connectionProperties) {
         return new RequestContext(
-                connectionProperties,
-                CloudPlatformType.NEO,
-                Platform.API_MANAGEMENT,
-                null
+            connectionProperties,
+            CloudPlatformType.NEO,
+            Platform.API_MANAGEMENT,
+            null
         );
     }
 
     public static RequestContext apiMgmtCloudFoundry(ConnectionProperties connectionProperties, String restTemplateWrapperKey) {
         return new RequestContext(
-                connectionProperties,
-                CloudPlatformType.CLOUD_FOUNDRY,
-                Platform.API_MANAGEMENT,
-                restTemplateWrapperKey
+            connectionProperties,
+            CloudPlatformType.CLOUD_FOUNDRY,
+            Platform.API_MANAGEMENT,
+            restTemplateWrapperKey
         );
     }
 
     public static RequestContext apiHub(ConnectionProperties connectionProperties) {
         return new RequestContext(
-                connectionProperties,
-                null,
-                Platform.API_HUB,
-                null
+            connectionProperties,
+            null,
+            Platform.API_HUB,
+            null
         );
     }
 
@@ -107,9 +101,5 @@ public class RequestContext {
             restTemplateWrapperKey = "";
         }
         return restTemplateWrapperKey;
-    }
-
-    public void setConnectionProperties(ConnectionProperties connectionProperties) {
-        this.connectionProperties = connectionProperties.clone();
     }
 }
