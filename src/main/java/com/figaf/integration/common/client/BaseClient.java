@@ -7,6 +7,8 @@ import com.figaf.integration.common.entity.*;
 import com.figaf.integration.common.exception.ClientIntegrationException;
 import com.figaf.integration.common.factory.HttpClientsFactory;
 import com.figaf.integration.common.factory.RestTemplateWrapperFactory;
+import lombok.Getter;
+import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
@@ -25,6 +27,10 @@ import org.springframework.web.client.RestTemplate;
 
 import java.net.*;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -52,6 +58,8 @@ public class BaseClient {
     private final static String DEFAULT_SSO_URL = "https://accounts.sap.com/saml2/idp/sso";
 
     private static final String X_CSRF_TOKEN = "X-CSRF-Token";
+
+    private static final ConcurrentMap<String, LockStatus> LOCK_STATUSES = new ConcurrentHashMap<>();
 
     protected final HttpClientsFactory httpClientsFactory;
     protected final RestTemplateWrapperFactory restTemplateWrapperFactory;
@@ -534,7 +542,12 @@ public class BaseClient {
         }
     }
 
-    private <RESULT> RESULT makeAuthRequestsIfNecessaryAndReturnNeededBody(RequestContext requestContext, String path, ResponseEntity<RESULT> initialResponseEntity, Class<RESULT> responseType) {
+    private <RESULT> RESULT makeAuthRequestsIfNecessaryAndReturnNeededBody(
+            RequestContext requestContext,
+            String path,
+            ResponseEntity<RESULT> initialResponseEntity,
+            Class<RESULT> responseType
+    ) {
         ResponseEntity<RESULT> responseEntity = makeAuthRequestsIfNecessaryAndReturnResponseEntity(
                 requestContext,
                 path,
@@ -562,7 +575,14 @@ public class BaseClient {
                 return initialResponseEntity;
             }
 
-            ResponseEntity<RESULT> responseEntity = makeAuthRequests(requestContext, path, additionalHeaders, responseType, responseBodyString, authorizationUrl);
+            ResponseEntity<RESULT> responseEntity = makeAuthRequestsWithLock(
+                    requestContext,
+                    path,
+                    additionalHeaders,
+                    responseType,
+                    responseBodyString,
+                    authorizationUrl
+            );
 
             log.debug("number of attempts = {}", numberOfAttempts);
 
@@ -573,7 +593,14 @@ public class BaseClient {
                     numberOfAttempts < MAX_NUMBER_OF_AUTH_ATTEMPTS
             ) {
                 log.warn("HttpStatusCodeException occurs: {}, {}", ex.getStatusCode(), ex.getMessage());
-                return makeAuthRequestsIfNecessaryAndReturnResponseEntity(requestContext, path, initialResponseEntity, additionalHeaders, responseType, numberOfAttempts + 1);
+                return makeAuthRequestsIfNecessaryAndReturnResponseEntity(
+                        requestContext,
+                        path,
+                        initialResponseEntity,
+                        additionalHeaders,
+                        responseType,
+                        numberOfAttempts + 1
+                );
             } else {
                 throw ex;
             }
@@ -586,7 +613,7 @@ public class BaseClient {
         }
     }
 
-    private <RESULT> ResponseEntity<RESULT> makeAuthRequests(
+    private <RESULT> ResponseEntity<RESULT> makeAuthRequestsWithLock(
             RequestContext requestContext,
             String path,
             HttpHeaders additionalHeaders,
@@ -594,89 +621,139 @@ public class BaseClient {
             String responseBodyString,
             String authorizationUrl
     ) throws Exception {
+        /*IRT-1891, IRT-4038: we need to do this because parallel authorizations cause serious problems
 
-        //IRT-1891 we need to do this because parallel authorizations cause serious problems
-        synchronized (requestContext.getRestTemplateWrapperKey().intern()) {
+        We need to avoid processing parallel authentication attempts for the same session context (based on restTemplateWrapperKey)
+        But it's not enough. In IRT-4038, in case of IS agent without custom idp (probably it's reproducible for custom idp as well)
+        we faced an issue when sequential (due to the synchronized block) authentication attempts were not idempotent. For example:
 
-            String signature = retrieveSignature(responseBodyString);
+        Let's we have 3 concurrent requests to fetch Integration Packages and no session
+        for current restTemplateWrapperKey at the moment, i.e all 3 GET requests are executed at the same time and failed due to the lack of the session.
+        After that related threads execute authentication logic, it has synchronized block, so, they will be processed sequentially
+        in that synchronized block. But only the first request processed all steps that are required for successful flow.
+        Remaining requests for some reason didn't follow same flow and almost immediately failed with 404 error when processing
+        GET /login/callback?code=...
 
-            String restTemplateWrapperKey = requestContext.getRestTemplateWrapperKey();
-            String redirectUrlReceivedAfterSuccessfulAuthorization;
+        Anyway it's useless to process the full auth again when it has just been processed. So, it's expected to have the following behavior:
 
-            if (requestContext.isUseCustomIdp()) {
-                //Not the best way to check that Entity Descriptor was generated and uploaded. Basically, SAML Url is not needed anymore for authentication from IRT deployment (it's still needed for the gradle plugins), but it defines if Entity Descriptor generation was done.
-                if (StringUtils.isEmpty(requestContext.getSamlUrl())) {
-                    throw new ClientIntegrationException("SAML Url is empty. Please generate an Entity Descriptor in the Figaf tool and upload a new Trust Configuration in your SAP cockpit");
-                }
-                authorizeViaCustomIdpProvider(requestContext, authorizationUrl);
-                redirectUrlReceivedAfterSuccessfulAuthorization = authorizationUrl;
-            } else if (StringUtils.isNotEmpty(requestContext.getLoginPageUrl())) {
-                //if we have loginPageUrl, the next call (getAuthorizationPageContent) is needed only for receiving cookies
-                getAuthorizationPageContent(restTemplateWrapperKey, authorizationUrl);
-                ResponseEntity<String> loginPageContentResponseEntity = getLoginPageContent(restTemplateWrapperKey, requestContext.getLoginPageUrl());
-                List<String> cookies = loginPageContentResponseEntity.getHeaders().get(HttpHeaders.SET_COOKIE);
-                MultiValueMap<String, String> loginFormData = buildLoginFormDataForSso(requestContext, loginPageContentResponseEntity.getBody());
-                redirectUrlReceivedAfterSuccessfulAuthorization = authorizeAndGetLocationHeader(requestContext, loginFormData, requestContext.getSsoUrl(), cookies);
-
-                ResponseEntity<RESULT> responseEntity = executeRedirectRequestAfterSuccessfulAuthorization(
-                        requestContext,
-                        restTemplateWrapperKey,
-                        redirectUrlReceivedAfterSuccessfulAuthorization,
-                        path,
-                        signature,
-                        additionalHeaders,
-                        responseType
-                );
-
-                String responseBodyAsString = getResponseBodyString(responseEntity);
-                String samlRedirectUrl = getFirstMatchedGroup(responseBodyAsString, SAML_REDIRECT_FORM_PATTERN, null);
-                //if samlRedirectUrl is null, it means that we already have a result. But if it's not null, we need to do an additional call
-                if (samlRedirectUrl == null) {
-                    return responseEntity;
-                }
-                redirectUrlReceivedAfterSuccessfulAuthorization = authorizeViaSamlAndGetLocationHeader(restTemplateWrapperKey, responseBodyAsString, samlRedirectUrl);
-            } else {
-                String authorizationPageContent = getAuthorizationPageContent(restTemplateWrapperKey, authorizationUrl);
-                String loginPageUrl = getLoginPageUrlFromAuthorizationPage(authorizationPageContent);
-                if (loginPageUrl != null) {
-                    try {
-                        new URL(loginPageUrl);
-                    } catch (MalformedURLException ex) {
-                        log.warn("fetched login page url is not valid: {}. It will be built automatically", loginPageUrl);
-                        loginPageUrl = buildDefaultLoginPageUrl(authorizationUrl);
-                        log.info("built login page url: {}", loginPageUrl);
-                    }
-                    ResponseEntity<String> loginPageContentResponseEntity = getLoginPageContent(restTemplateWrapperKey, loginPageUrl);
-                    MultiValueMap<String, String> loginFormData = buildLoginFormDataForSso(requestContext, loginPageContentResponseEntity.getBody());
-                    redirectUrlReceivedAfterSuccessfulAuthorization = authorizeAndGetLocationHeader(requestContext, loginFormData, requestContext.getSsoUrl(), null);
-                } else {
-                    Matcher matcher = PWD_FORM_PATTERN.matcher(authorizationPageContent);
-                    String loginDoPath;
-                    String csrfToken;
-                    if (matcher.find()) {
-                        loginDoPath = matcher.group(1);
-                        csrfToken = matcher.group(2);
-                    } else {
-                        throw new ClientIntegrationException(String.format("Can't retrieve login page url or login form data from %s", authorizationPageContent));
-                    }
-
-                    MultiValueMap<String, String> loginFormData = buildLoginFormData(requestContext, csrfToken);
-                    String loginUrl = buildLoginUrl(authorizationUrl, loginDoPath);
-                    redirectUrlReceivedAfterSuccessfulAuthorization = authorizeAndGetLocationHeader(requestContext, loginFormData, loginUrl, null);
-                }
+        When we have multiple threads locked by the same restTemplateWrapperKey in that method, only the first one should process authentication e2e,
+        other should try to process the main query again.
+         */
+        LockStatus lockStatus = LOCK_STATUSES.computeIfAbsent(requestContext.getRestTemplateWrapperKey(), k -> new LockStatus());
+        lockStatus.getWaitingThreadCount().incrementAndGet(); // Increment waiting thread count
+        lockStatus.getLock().lock();
+        try {
+            if (lockStatus.isAuthProcessed()) {
+                log.debug("skipping authentication, trying to execute the main query");
+                return executeGetRequestReturningTextBody(requestContext, path, responseType);
             }
 
-            return executeRedirectRequestAfterSuccessfulAuthorization(
+            ResponseEntity<RESULT> responseEntity = makeAuthRequests(
                     requestContext,
-                    restTemplateWrapperKey,
-                    redirectUrlReceivedAfterSuccessfulAuthorization,
                     path,
-                    signature,
                     additionalHeaders,
-                    responseType
+                    responseType,
+                    responseBodyString,
+                    authorizationUrl
             );
 
+            lockStatus.setAuthProcessed(true); // Mark the auth block as processed
+            return responseEntity;
+        } finally {
+            lockStatus.getWaitingThreadCount().decrementAndGet(); // Decrement waiting thread count
+            if (lockStatus.getWaitingThreadCount().get() == 0) {
+                lockStatus.setAuthProcessed(false);
+            }
+            lockStatus.getLock().unlock(); // Ensure the lock is released
         }
+    }
+
+    private <RESULT> ResponseEntity<RESULT> makeAuthRequests(
+        RequestContext requestContext,
+        String path,
+        HttpHeaders additionalHeaders,
+        Class<RESULT> responseType,
+        String responseBodyString,
+        String authorizationUrl
+    ) throws Exception {
+        log.debug("processing authentication");
+        String signature = retrieveSignature(responseBodyString);
+
+        String restTemplateWrapperKey = requestContext.getRestTemplateWrapperKey();
+        String redirectUrlReceivedAfterSuccessfulAuthorization;
+
+        if (requestContext.isUseCustomIdp()) {
+            //Not the best way to check that Entity Descriptor was generated and uploaded. Basically, SAML Url is not needed anymore for authentication from IRT deployment (it's still needed for the gradle plugins), but it defines if Entity Descriptor generation was done.
+            if (StringUtils.isEmpty(requestContext.getSamlUrl())) {
+                throw new ClientIntegrationException("SAML Url is empty. Please generate an Entity Descriptor in the Figaf tool and upload a new Trust Configuration in your SAP cockpit");
+            }
+            authorizeViaCustomIdpProvider(requestContext, authorizationUrl);
+            redirectUrlReceivedAfterSuccessfulAuthorization = authorizationUrl;
+        } else if (StringUtils.isNotEmpty(requestContext.getLoginPageUrl())) {
+            //if we have loginPageUrl, the next call (getAuthorizationPageContent) is needed only for receiving cookies
+            getAuthorizationPageContent(restTemplateWrapperKey, authorizationUrl);
+            ResponseEntity<String> loginPageContentResponseEntity = getLoginPageContent(restTemplateWrapperKey, requestContext.getLoginPageUrl());
+            List<String> cookies = loginPageContentResponseEntity.getHeaders().get(HttpHeaders.SET_COOKIE);
+            MultiValueMap<String, String> loginFormData = buildLoginFormDataForSso(requestContext, loginPageContentResponseEntity.getBody());
+            redirectUrlReceivedAfterSuccessfulAuthorization = authorizeAndGetLocationHeader(requestContext, loginFormData, requestContext.getSsoUrl(), cookies);
+
+            ResponseEntity<RESULT> responseEntity = executeRedirectRequestAfterSuccessfulAuthorization(
+                requestContext,
+                restTemplateWrapperKey,
+                redirectUrlReceivedAfterSuccessfulAuthorization,
+                path,
+                signature,
+                additionalHeaders,
+                responseType
+            );
+
+            String responseBodyAsString = getResponseBodyString(responseEntity);
+            String samlRedirectUrl = getFirstMatchedGroup(responseBodyAsString, SAML_REDIRECT_FORM_PATTERN, null);
+            //if samlRedirectUrl is null, it means that we already have a result. But if it's not null, we need to do an additional call
+            if (samlRedirectUrl == null) {
+                return responseEntity;
+            }
+            redirectUrlReceivedAfterSuccessfulAuthorization = authorizeViaSamlAndGetLocationHeader(restTemplateWrapperKey, responseBodyAsString, samlRedirectUrl);
+        } else {
+            String authorizationPageContent = getAuthorizationPageContent(restTemplateWrapperKey, authorizationUrl);
+            String loginPageUrl = getLoginPageUrlFromAuthorizationPage(authorizationPageContent);
+            if (loginPageUrl != null) {
+                try {
+                    new URL(loginPageUrl);
+                } catch (MalformedURLException ex) {
+                    log.warn("fetched login page url is not valid: {}. It will be built automatically", loginPageUrl);
+                    loginPageUrl = buildDefaultLoginPageUrl(authorizationUrl);
+                    log.info("built login page url: {}", loginPageUrl);
+                }
+                ResponseEntity<String> loginPageContentResponseEntity = getLoginPageContent(restTemplateWrapperKey, loginPageUrl);
+                MultiValueMap<String, String> loginFormData = buildLoginFormDataForSso(requestContext, loginPageContentResponseEntity.getBody());
+                redirectUrlReceivedAfterSuccessfulAuthorization = authorizeAndGetLocationHeader(requestContext, loginFormData, requestContext.getSsoUrl(), null);
+            } else {
+                Matcher matcher = PWD_FORM_PATTERN.matcher(authorizationPageContent);
+                String loginDoPath;
+                String csrfToken;
+                if (matcher.find()) {
+                    loginDoPath = matcher.group(1);
+                    csrfToken = matcher.group(2);
+                } else {
+                    throw new ClientIntegrationException(String.format("Can't retrieve login page url or login form data from %s", authorizationPageContent));
+                }
+
+                MultiValueMap<String, String> loginFormData = buildLoginFormData(requestContext, csrfToken);
+                String loginUrl = buildLoginUrl(authorizationUrl, loginDoPath);
+                redirectUrlReceivedAfterSuccessfulAuthorization = authorizeAndGetLocationHeader(requestContext, loginFormData, loginUrl, null);
+            }
+        }
+
+        return executeRedirectRequestAfterSuccessfulAuthorization(
+            requestContext,
+            restTemplateWrapperKey,
+            redirectUrlReceivedAfterSuccessfulAuthorization,
+            path,
+            signature,
+            additionalHeaders,
+            responseType
+        );
     }
 
     private void authorizeViaCustomIdpProvider(RequestContext requestContext, String authorizationUrl) throws URISyntaxException {
@@ -1102,5 +1179,12 @@ public class BaseClient {
         }
     }
 
+    @Getter
+    private static class LockStatus {
+        final ReentrantLock lock = new ReentrantLock();
+        final AtomicInteger waitingThreadCount = new AtomicInteger(0);
+        @Setter
+        boolean authProcessed = false;
+    }
 }
 
