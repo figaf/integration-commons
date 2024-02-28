@@ -1,6 +1,5 @@
 package com.figaf.integration.common.factory;
 
-import com.figaf.integration.common.client.CloudConnectorEmailClient;
 import lombok.Getter;
 
 import java.util.Optional;
@@ -8,20 +7,18 @@ import java.util.Optional;
 @Getter
 public class SmtpClientsFactory {
 
-    private final CloudConnectorEmailClient cloudConnectorEmailClient;
+    private final CloudConnectorParameters cloudConnectorParameters;
 
-    public static SmtpClientsFactory getForOnPremiseIntegration(String host, String locationId, int port) {
-        return new SmtpClientsFactory(CloudConnectorParameters.getInstance(), host, locationId, port);
+    private final CloudConnectorAccessTokenProvider accessTokenProvider;
+
+    public static SmtpClientsFactory getForOnPremiseIntegration() {
+        return new SmtpClientsFactory(CloudConnectorParameters.getInstance(), new CloudConnectorAccessTokenProvider());
     }
 
-    private SmtpClientsFactory(
-        CloudConnectorParameters cloudConnectorParameters,
-        String host,
-        String locationId,
-        int port
-    ) {
+    private SmtpClientsFactory(CloudConnectorParameters cloudConnectorParameters, CloudConnectorAccessTokenProvider accessTokenProvider) {
+        this.accessTokenProvider = accessTokenProvider;
         validateCloudConnectorParameters(cloudConnectorParameters);
-        this.cloudConnectorEmailClient = new CloudConnectorEmailClient(cloudConnectorParameters, host, locationId, port);
+        this.cloudConnectorParameters = cloudConnectorParameters;
     }
 
     private void validateCloudConnectorParameters(CloudConnectorParameters cloudConnectorParameters) {

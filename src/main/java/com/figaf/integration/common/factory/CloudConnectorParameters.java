@@ -16,7 +16,7 @@ import java.util.Optional;
 @Getter
 @Builder
 @Slf4j
-@ToString(of = {"xsuaaUrl", "connectionProxyHost", "connectionProxyPort"})
+@ToString(of = {"xsuaaUrl", "connectionProxyHost", "connectionProxyPort", "connectionProxyPortSocks5"})
 public class CloudConnectorParameters {
 
     private static final String SOCKS5_PROXY_PORT_PROPERTY = "onpremise_socks5_proxy_port";
