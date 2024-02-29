@@ -18,7 +18,7 @@ class OAuthHttpRequestInterceptor implements HttpRequestInterceptor {
 
     private final CloudConnectorParameters cloudConnectorParameters;
     private final String locationId;
-    private OAuth2TokenResponse accessToken;
+    private OAuth2TokenResponse oAuth2TokenResponse;
 
     public OAuthHttpRequestInterceptor(CloudConnectorParameters cloudConnectorParameters, String locationId) {
         this.cloudConnectorParameters = cloudConnectorParameters;
@@ -32,11 +32,11 @@ class OAuthHttpRequestInterceptor implements HttpRequestInterceptor {
         }
 
         synchronized (this) {
-            if (accessToken == null || (accessToken.getExpiredAt() != null && accessToken.getExpiredAt().isBefore(Instant.now()))) {
+            if (oAuth2TokenResponse == null || (oAuth2TokenResponse.getExpiredAt() != null && oAuth2TokenResponse.getExpiredAt().isBefore(Instant.now()))) {
                 CloudConnectorAccessTokenProvider cloudConnectorAccessTokenProvider = new CloudConnectorAccessTokenProvider();
-                accessToken = cloudConnectorAccessTokenProvider.getToken(cloudConnectorParameters);
+                oAuth2TokenResponse = cloudConnectorAccessTokenProvider.getToken(cloudConnectorParameters);
             }
-            request.addHeader("Proxy-Authorization", String.format("%s %s", accessToken.getTokenType(), accessToken.getAccessToken()));
+            request.addHeader("Proxy-Authorization", String.format("%s %s", oAuth2TokenResponse.getTokenType(), oAuth2TokenResponse.getAccessToken()));
             if (StringUtils.isNotEmpty(locationId)) {
                 request.addHeader("SAP-Connectivity-SCC-Location_ID", locationId);
             }

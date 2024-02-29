@@ -11,7 +11,7 @@ import org.apache.http.impl.client.HttpClients;
 
 
 @Slf4j
-public class CloudConnectorAccessTokenProvider {
+class CloudConnectorAccessTokenProvider {
 
     public OAuth2TokenResponse getToken(CloudConnectorParameters cloudConnectorParameters) throws TokenFlowException {
         XsuaaTokenFlows tokenFlows = new XsuaaTokenFlows(
