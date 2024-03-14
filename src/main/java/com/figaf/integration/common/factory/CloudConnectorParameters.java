@@ -8,30 +8,36 @@ import org.apache.commons.lang3.StringUtils;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.util.Optional;
+
 /**
  * @author Arsenii Istlentev
  */
+@Getter
 @Builder
 @Slf4j
-@ToString(of = {"xsuaaUrl", "connectionProxyHost", "connectionProxyPort"})
+@ToString(of = {"xsuaaUrl", "connectionProxyHost", "connectionProxyPort", "connectionProxyPortSocks5"})
 class CloudConnectorParameters {
+
+    private static final String SOCKS5_PROXY_PORT_PROPERTY = "onpremise_socks5_proxy_port";
+
+    private static final String HTTP_PROXY_PORT_PROPERTY = "onpremise_proxy_http_port";
+
+    private static final String HTTP_PROXY_HOST_PROPERTY = "onpremise_proxy_host";
 
     private final static CloudConnectorParameters INSTANCE;
 
-    @Getter
     private String clientId;
 
-    @Getter
     private String clientSecret;
 
-    @Getter
     private String xsuaaUrl;
 
-    @Getter
     private String connectionProxyHost;
 
-    @Getter
     private int connectionProxyPort;
+
+    private Integer connectionProxyPortSocks5;
 
     static {
         INSTANCE = init();
@@ -65,14 +71,18 @@ class CloudConnectorParameters {
         }
 
         JSONObject connectivityCredentials = connectivityJsonArr.getJSONObject(0).getJSONObject("credentials");
-        CloudConnectorParameters cloudConnectorParameters = CloudConnectorParameters.builder()
-                .clientId(connectivityCredentials.getString("clientid"))
-                .clientSecret(connectivityCredentials.getString("clientsecret"))
-                .xsuaaUrl(xsuaaCredentials.getString("url"))
-                .connectionProxyHost(connectivityCredentials.getString("onpremise_proxy_host"))
-                .connectionProxyPort(Integer.parseInt(connectivityCredentials.getString("onpremise_proxy_http_port")))
-                .build();
+        Integer connectionProxyPortSocks5 = connectivityCredentials.has(SOCKS5_PROXY_PORT_PROPERTY) ? Integer.valueOf(connectivityCredentials.getString(SOCKS5_PROXY_PORT_PROPERTY)) : null;
 
+        CloudConnectorParameters.CloudConnectorParametersBuilder cloudConnectorParametersBuilder = CloudConnectorParameters.builder()
+            .clientId(connectivityCredentials.getString("clientid"))
+            .clientSecret(connectivityCredentials.getString("clientsecret"))
+            .xsuaaUrl(xsuaaCredentials.getString("url"))
+            .connectionProxyHost(connectivityCredentials.getString(HTTP_PROXY_HOST_PROPERTY))
+            .connectionProxyPort(Integer.parseInt(connectivityCredentials.getString(HTTP_PROXY_PORT_PROPERTY)));
+        if (Optional.ofNullable(connectionProxyPortSocks5).isPresent()) {
+            cloudConnectorParametersBuilder.connectionProxyPortSocks5(connectionProxyPortSocks5);
+        }
+        CloudConnectorParameters cloudConnectorParameters = cloudConnectorParametersBuilder.build();
         log.info("cloudConnectorParameters was successfully initialized: {}", cloudConnectorParameters);
         return cloudConnectorParameters;
     }
