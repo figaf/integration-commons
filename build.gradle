@@ -4,7 +4,7 @@ plugins {
 }
 
 group = 'com.github.figaf'
-version = '1.25'
+version = '1.26'
 
 repositories {
     mavenLocal()
@@ -27,6 +27,7 @@ dependencies {
 
     implementation 'org.jsoup:jsoup:1.13.1'
     implementation 'org.bidib.com.github.markusbernhardt:proxy-vole:1.1.0'
+    implementation 'com.sap.cloud.security.xsuaa:spring-xsuaa:2.8.0'
 }
 
 publishing {
