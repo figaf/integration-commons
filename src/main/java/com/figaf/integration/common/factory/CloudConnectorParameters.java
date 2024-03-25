@@ -1,5 +1,6 @@
 package com.figaf.integration.common.factory;
 
+import com.figaf.integration.common.enums.TypeOfService;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.ToString;
@@ -8,6 +9,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.util.EnumMap;
 import java.util.Optional;
 
 /**
@@ -17,7 +19,7 @@ import java.util.Optional;
 @Builder
 @Slf4j
 @ToString(of = {"xsuaaUrl", "connectionProxyHost", "connectionProxyPort", "connectionProxyPortSocks5"})
-class CloudConnectorParameters {
+public class CloudConnectorParameters {
 
     private static final String SOCKS5_PROXY_PORT_PROPERTY = "onpremise_socks5_proxy_port";
 
@@ -48,15 +50,12 @@ class CloudConnectorParameters {
     }
 
     private static CloudConnectorParameters init() {
-        String vcapServices = System.getenv("VCAP_SERVICES");
-        if (StringUtils.isEmpty(vcapServices)) {
-            log.info("VCAP_SERVICES is null");
+        JSONObject vcapServicesObj = createVcapServices();
+        if (vcapServicesObj == null) {
             return null;
         }
 
-        JSONObject jsonObj = new JSONObject(vcapServices);
-
-        JSONArray xsuaaJsonArr = jsonObj.optJSONArray("xsuaa");
+        JSONArray xsuaaJsonArr = vcapServicesObj.optJSONArray("xsuaa");
         if (xsuaaJsonArr == null) {
             log.info("xsuaa is null");
             return null;
@@ -64,7 +63,7 @@ class CloudConnectorParameters {
 
         JSONObject xsuaaCredentials = xsuaaJsonArr.getJSONObject(0).getJSONObject("credentials");
 
-        JSONArray connectivityJsonArr = jsonObj.optJSONArray("connectivity");
+        JSONArray connectivityJsonArr = vcapServicesObj.optJSONArray("connectivity");
         if (connectivityJsonArr == null) {
             log.info("connectivity is null");
             return null;
@@ -87,4 +86,33 @@ class CloudConnectorParameters {
         return cloudConnectorParameters;
     }
 
+    public static EnumMap<TypeOfService, Boolean> checkServicesExistence() {
+        JSONObject vcapServicesObj = createVcapServices();
+        if (vcapServicesObj == null) {
+            return null;
+        }
+
+        EnumMap<TypeOfService, Boolean> servicesExistence = new EnumMap<>(TypeOfService.class);
+        servicesExistence.put(TypeOfService.CONNECTIVITY, checkService(vcapServicesObj, "connectivity"));
+        servicesExistence.put(TypeOfService.DESTINATION, checkService(vcapServicesObj, "destination"));
+        return servicesExistence;
+    }
+
+    private static JSONObject createVcapServices() {
+        String vcapServices = System.getenv("VCAP_SERVICES");
+        if (StringUtils.isEmpty(vcapServices)) {
+            log.info("VCAP_SERVICES is null");
+            return null;
+        }
+        return new JSONObject(vcapServices);
+    }
+
+    private static boolean checkService(JSONObject vcapServicesObj, String serviceName) {
+        JSONArray serviceArray = vcapServicesObj.optJSONArray(serviceName);
+        boolean exists = serviceArray != null;
+        if (!exists) {
+            log.info("{} is null", serviceName);
+        }
+        return exists;
+    }
 }
