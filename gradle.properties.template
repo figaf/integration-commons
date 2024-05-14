@@ -1,0 +1,4 @@
+enableSnapshots=false
+snapshotsRepoUrl=http://localhost:8097/nexus
+snapshotsRepoUsername=user
+snapshotsRepoPassword=1234
