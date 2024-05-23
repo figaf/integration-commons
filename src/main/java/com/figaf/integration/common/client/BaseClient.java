@@ -292,6 +292,39 @@ public class BaseClient {
         }
     }
 
+    public <RESULT, REQ> RESULT executeMethodPublicApiUsingCustomHeaders(
+        RequestContext requestContext,
+        String pathForMainRequest,
+        REQ requestBody,
+        HttpMethod httpMethod,
+        HttpHeaders customHttpHeaders,
+        ResponseHandlerCallback<RESULT, ResponseEntity<String>> responseHandlerCallback
+    ) {
+        try {
+            RestTemplate restTemplate = getOrCreateRestTemplateWrapperSingletonWithInterceptors(requestContext);
+            String tokenUrl = buildUrl(requestContext, "/api/v1");
+            String url = buildUrl(requestContext, pathForMainRequest);
+            HttpHeaders httpHeaders = createHttpHeadersForPublicApiMethods(requestContext, restTemplate, tokenUrl);
+            httpHeaders.addAll(customHttpHeaders);
+            HttpEntity<REQ> requestEntity = new HttpEntity<>(requestBody, httpHeaders);
+            return executeMethodPublicApi(
+                requestContext,
+                restTemplate,
+                url,
+                tokenUrl,
+                httpMethod,
+                requestEntity,
+                responseHandlerCallback,
+                String.class
+            );
+        } catch (ClientIntegrationException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            log.error("Can't executeMethodPublicApiUsingCustomHeaders: ", ex);
+            throw new ClientIntegrationException(ex);
+        }
+    }
+
     public <RESULT, RESP> RESULT executeMethodPublicApi(
             RequestContext requestContext,
             String pathForMainRequest,
