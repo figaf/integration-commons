@@ -82,52 +82,52 @@ public class BaseClient {
     }
 
     public <RESULT> RESULT executeGet(
-            RequestContext requestContext,
-            String path,
-            ResponseHandlerCallback<RESULT, String> responseHandlerCallback
+        RequestContext requestContext,
+        String path,
+        ResponseHandlerCallback<RESULT, String> responseHandlerCallback
     ) {
         return executeGet(requestContext, path, responseHandlerCallback, String.class);
     }
 
     public <RESULT> RESULT executeGetPublicApiAndReturnResponseBody(
-            RequestContext requestContext,
-            String path,
-            ResponseHandlerCallback<RESULT, String> responseHandlerCallback
+        RequestContext requestContext,
+        String path,
+        ResponseHandlerCallback<RESULT, String> responseHandlerCallback
     ) {
         return executeGetPublicApiAndReturnResponseBody(requestContext, path, null, responseHandlerCallback, String.class);
     }
 
     public <RESULT> RESULT executeGetPublicApiAndReturnResponseBody(
-            RequestContext requestContext,
-            String path,
-            HttpHeaders httpHeaders,
-            ResponseHandlerCallback<RESULT, String> responseHandlerCallback
+        RequestContext requestContext,
+        String path,
+        HttpHeaders httpHeaders,
+        ResponseHandlerCallback<RESULT, String> responseHandlerCallback
     ) {
         return executeGetPublicApiAndReturnResponseBody(requestContext, path, httpHeaders, responseHandlerCallback, String.class);
     }
 
     public <RESULT> RESULT executeGetPublicApiAndReturnResponseEntity(
-            RequestContext requestContext,
-            String path,
-            ResponseHandlerCallback<RESULT, ResponseEntity<String>> responseHandlerCallback) {
+        RequestContext requestContext,
+        String path,
+        ResponseHandlerCallback<RESULT, ResponseEntity<String>> responseHandlerCallback) {
         return executeGetPublicApiAndReturnResponseEntity(requestContext, path, null, responseHandlerCallback, String.class);
     }
 
     public <RESULT> RESULT executeGetPublicApiAndReturnResponseEntity(
-            RequestContext requestContext,
-            String path,
-            HttpHeaders httpHeaders,
-            ResponseHandlerCallback<RESULT, ResponseEntity<String>> responseHandlerCallback
+        RequestContext requestContext,
+        String path,
+        HttpHeaders httpHeaders,
+        ResponseHandlerCallback<RESULT, ResponseEntity<String>> responseHandlerCallback
     ) {
         return executeGetPublicApiAndReturnResponseEntity(requestContext, path, httpHeaders, responseHandlerCallback, String.class);
     }
 
     public <RESULT, RESP> RESULT executeGetPublicApiAndReturnResponseBody(
-            RequestContext requestContext,
-            String path,
-            HttpHeaders httpHeaders,
-            ResponseHandlerCallback<RESULT, RESP> responseHandlerCallback,
-            Class<RESP> bodyType
+        RequestContext requestContext,
+        String path,
+        HttpHeaders httpHeaders,
+        ResponseHandlerCallback<RESULT, RESP> responseHandlerCallback,
+        Class<RESP> bodyType
     ) {
         ResponseEntity<RESP> responseEntity = executeGetPublicApi(requestContext, path, httpHeaders, bodyType);
         RESULT response;
@@ -143,11 +143,11 @@ public class BaseClient {
     }
 
     public <RESULT, RESP> RESULT executeGetPublicApiAndReturnResponseEntity(
-            RequestContext requestContext,
-            String path,
-            HttpHeaders httpHeaders,
-            ResponseHandlerCallback<RESULT, ResponseEntity<RESP>> responseHandlerCallback,
-            Class<RESP> bodyType
+        RequestContext requestContext,
+        String path,
+        HttpHeaders httpHeaders,
+        ResponseHandlerCallback<RESULT, ResponseEntity<RESP>> responseHandlerCallback,
+        Class<RESP> bodyType
     ) {
         ResponseEntity<RESP> responseEntity = executeGetPublicApi(requestContext, path, httpHeaders, bodyType);
         RESULT response;
@@ -163,10 +163,10 @@ public class BaseClient {
     }
 
     public <RESULT, RESPONSE> RESULT executeGet(
-            RequestContext requestContext,
-            String path,
-            ResponseHandlerCallback<RESULT, RESPONSE> responseHandlerCallback,
-            Class<RESPONSE> bodyType
+        RequestContext requestContext,
+        String path,
+        ResponseHandlerCallback<RESULT, RESPONSE> responseHandlerCallback,
+        Class<RESPONSE> bodyType
     ) {
         RESPONSE responseBody;
         if (CloudPlatformType.CLOUD_FOUNDRY.equals(requestContext.getCloudPlatformType())) {
@@ -192,18 +192,18 @@ public class BaseClient {
     }
 
     public <RESULT> RESULT executeMethod(
-            RequestContext requestContext,
-            String pathForMainRequest,
-            ResponseHandlerCallbackForCrudMethods<RESULT> responseHandlerCallback
+        RequestContext requestContext,
+        String pathForMainRequest,
+        ResponseHandlerCallbackForCrudMethods<RESULT> responseHandlerCallback
     ) {
         return executeMethod(requestContext, "/itspaces/api/1.0/user", pathForMainRequest, responseHandlerCallback);
     }
 
     public <RESULT> RESULT executeMethod(
-            RequestContext requestContext,
-            String pathForToken,
-            String pathForMainRequest,
-            ResponseHandlerCallbackForCrudMethods<RESULT> responseHandlerCallback
+        RequestContext requestContext,
+        String pathForToken,
+        String pathForMainRequest,
+        ResponseHandlerCallbackForCrudMethods<RESULT> responseHandlerCallback
     ) {
         try {
             if (CloudPlatformType.CLOUD_FOUNDRY.equals(requestContext.getCloudPlatformType())) {
@@ -214,7 +214,7 @@ public class BaseClient {
             } else {
                 ConnectionProperties connectionProperties = requestContext.getConnectionProperties();
                 RestTemplateWrapper restTemplateWrapper = restTemplateWrapperFactory.createRestTemplateWrapper(singleton(
-                        new BasicAuthenticationInterceptor(connectionProperties.getUsername(), connectionProperties.getPassword())
+                    new BasicAuthenticationInterceptor(connectionProperties.getUsername(), connectionProperties.getPassword())
                 ));
                 String token = retrieveToken(requestContext, restTemplateWrapper.getRestTemplate(), pathForToken);
                 String url = buildUrl(requestContext, pathForMainRequest);
@@ -231,11 +231,11 @@ public class BaseClient {
     }
 
     public <RESULT, REQ> RESULT executeMethodPublicApi(
-            RequestContext requestContext,
-            String pathForMainRequest,
-            REQ requestBody,
-            HttpMethod httpMethod,
-            ResponseHandlerCallback<RESULT, ResponseEntity<String>> responseHandlerCallback
+        RequestContext requestContext,
+        String pathForMainRequest,
+        REQ requestBody,
+        HttpMethod httpMethod,
+        ResponseHandlerCallback<RESULT, ResponseEntity<String>> responseHandlerCallback
     ) {
         try {
             RestTemplate restTemplate = getOrCreateRestTemplateWrapperSingletonWithInterceptors(requestContext);
@@ -244,14 +244,14 @@ public class BaseClient {
             HttpHeaders httpHeaders = createHttpHeadersForPublicApiMethods(requestContext, restTemplate, tokenUrl);
             HttpEntity<REQ> requestEntity = new HttpEntity<>(requestBody, httpHeaders);
             return executeMethodPublicApi(
-                    requestContext,
-                    restTemplate,
-                    url,
-                    tokenUrl,
-                    httpMethod,
-                    requestEntity,
-                    responseHandlerCallback,
-                    String.class
+                requestContext,
+                restTemplate,
+                url,
+                tokenUrl,
+                httpMethod,
+                requestEntity,
+                responseHandlerCallback,
+                String.class
             );
         } catch (ClientIntegrationException ex) {
             throw ex;
@@ -292,13 +292,42 @@ public class BaseClient {
         }
     }
 
+    public <RESULT, REQ> RESULT executeMethodPublicApiAppendingCustomHeaders(
+        RequestContext requestContext,
+        String pathForMainRequest,
+        REQ requestBody,
+        HttpMethod httpMethod,
+        HttpHeaders customHttpHeaders,
+        ResponseHandlerCallback<RESULT, ResponseEntity<String>> responseHandlerCallback
+    ) {
+        try {
+            RestTemplate restTemplate = getOrCreateRestTemplateWrapperSingletonWithInterceptors(requestContext);
+            String tokenUrl = buildUrl(requestContext, "/api/v1");
+            HttpHeaders httpHeaders = createHttpHeadersForPublicApiMethods(requestContext, restTemplate, tokenUrl);
+            httpHeaders.addAll(customHttpHeaders);
+            return executeMethodPublicApiWithCustomHeaders(
+                requestContext,
+                pathForMainRequest,
+                requestBody,
+                httpMethod,
+                httpHeaders,
+                responseHandlerCallback
+            );
+        } catch (ClientIntegrationException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            log.error("Can't executeMethodPublicApiAppendingCustomHeaders: ", ex);
+            throw new ClientIntegrationException(ex);
+        }
+    }
+
     public <RESULT, RESP> RESULT executeMethodPublicApi(
-            RequestContext requestContext,
-            String pathForMainRequest,
-            String requestBody,
-            HttpMethod httpMethod,
-            ResponseHandlerCallback<RESULT, ResponseEntity<RESP>> responseHandlerCallback,
-            Class<RESP> bodyType
+        RequestContext requestContext,
+        String pathForMainRequest,
+        String requestBody,
+        HttpMethod httpMethod,
+        ResponseHandlerCallback<RESULT, ResponseEntity<RESP>> responseHandlerCallback,
+        Class<RESP> bodyType
     ) {
         try {
             RestTemplate restTemplate = getOrCreateRestTemplateWrapperSingletonWithInterceptors(requestContext);
@@ -307,14 +336,14 @@ public class BaseClient {
             HttpHeaders httpHeaders = createHttpHeadersForPublicApiMethods(requestContext, restTemplate, tokenUrl);
             HttpEntity<String> requestEntity = new HttpEntity<>(requestBody, httpHeaders);
             return executeMethodPublicApi(
-                    requestContext,
-                    restTemplate,
-                    url,
-                    tokenUrl,
-                    httpMethod,
-                    requestEntity,
-                    responseHandlerCallback,
-                    bodyType
+                requestContext,
+                restTemplate,
+                url,
+                tokenUrl,
+                httpMethod,
+                requestEntity,
+                responseHandlerCallback,
+                bodyType
             );
         } catch (ClientIntegrationException ex) {
             throw ex;
@@ -325,9 +354,9 @@ public class BaseClient {
     }
 
     public <RESULT> RESULT executeDeletePublicApi(
-            RequestContext requestContext,
-            String pathForMainRequest,
-            ResponseHandlerCallback<RESULT, ResponseEntity<String>> responseHandlerCallback
+        RequestContext requestContext,
+        String pathForMainRequest,
+        ResponseHandlerCallback<RESULT, ResponseEntity<String>> responseHandlerCallback
     ) {
         try {
             RestTemplate restTemplate = getOrCreateRestTemplateWrapperSingletonWithInterceptors(requestContext);
@@ -336,14 +365,14 @@ public class BaseClient {
             HttpHeaders httpHeaders = createHttpHeadersForPublicApiMethods(requestContext, restTemplate, tokenUrl);
             HttpEntity<Void> requestEntity = new HttpEntity<>(httpHeaders);
             return executeMethodPublicApi(
-                    requestContext,
-                    restTemplate,
-                    url,
-                    tokenUrl,
-                    DELETE,
-                    requestEntity,
-                    responseHandlerCallback,
-                    String.class
+                requestContext,
+                restTemplate,
+                url,
+                tokenUrl,
+                DELETE,
+                requestEntity,
+                responseHandlerCallback,
+                String.class
             );
         } catch (HttpClientErrorException.NotFound notFoundException) {
             log.debug("Can't executeDeletePublicApi (NotFound error): {}", ExceptionUtils.getMessage(notFoundException));
@@ -367,23 +396,23 @@ public class BaseClient {
         RestTemplate restTemplate;
         if (CloudPlatformType.CLOUD_FOUNDRY.equals(requestContext.getCloudPlatformType()) && AuthenticationType.OAUTH.equals(requestContext.getAuthenticationType())) {
             restTemplate = restTemplateWrapperHolder.getOrCreateRestTemplateWrapperSingletonWithInterceptors(
-                    requestContext.getRestTemplateWrapperKey(),
-                    singleton(new OAuthTokenInterceptor(
-                            new OAuthTokenRequestContext(
-                                    requestContext.getClientId(),
-                                    requestContext.getClientSecret(),
-                                    requestContext.getOauthUrl()
-                            ),
-                            new CloudFoundryOAuthTokenParser(),
-                            httpClientsFactory
-                    ))
+                requestContext.getRestTemplateWrapperKey(),
+                singleton(new OAuthTokenInterceptor(
+                    new OAuthTokenRequestContext(
+                        requestContext.getClientId(),
+                        requestContext.getClientSecret(),
+                        requestContext.getOauthUrl()
+                    ),
+                    new CloudFoundryOAuthTokenParser(),
+                    httpClientsFactory
+                ))
             ).getRestTemplate();
         } else {
             restTemplate = restTemplateWrapperHolder.getOrCreateRestTemplateWrapperSingletonWithInterceptors(
-                    requestContext.getRestTemplateWrapperKey(),
-                    singleton(
-                            new BasicAuthenticationInterceptor(requestContext.getConnectionProperties().getUsername(), requestContext.getConnectionProperties().getPassword())
-                    )
+                requestContext.getRestTemplateWrapperKey(),
+                singleton(
+                    new BasicAuthenticationInterceptor(requestContext.getConnectionProperties().getUsername(), requestContext.getConnectionProperties().getPassword())
+                )
             ).getRestTemplate();
         }
         return restTemplate;
@@ -396,48 +425,48 @@ public class BaseClient {
     }
 
     private <RESULT, REQ, RESP> RESULT executeMethodPublicApi(
-            RequestContext requestContext,
-            RestTemplate restTemplate,
-            String url,
-            String tokenUrl,
-            HttpMethod httpMethod,
-            HttpEntity<REQ> requestEntity,
-            ResponseHandlerCallback<RESULT, ResponseEntity<RESP>> responseHandlerCallback,
-            Class<RESP> bodyType
+        RequestContext requestContext,
+        RestTemplate restTemplate,
+        String url,
+        String tokenUrl,
+        HttpMethod httpMethod,
+        HttpEntity<REQ> requestEntity,
+        ResponseHandlerCallback<RESULT, ResponseEntity<RESP>> responseHandlerCallback,
+        Class<RESP> bodyType
     ) throws Exception {
         try {
             ResponseEntity<RESP> responseEntity = restTemplate.exchange(
-                    url,
-                    httpMethod,
-                    requestEntity,
-                    bodyType
+                url,
+                httpMethod,
+                requestEntity,
+                bodyType
             );
             return responseHandlerCallback.apply(responseEntity);
         } catch (HttpClientErrorException.Forbidden ex) {
             ResponseEntity<RESP> responseEntity = processForbiddenHttpClientErrorException(
-                    ex,
-                    restTemplate,
-                    url,
-                    tokenUrl,
-                    requestEntity,
-                    httpMethod,
-                    requestContext.getRestTemplateWrapperKey(),
-                    requestEntity.getHeaders().getFirst(X_CSRF_TOKEN),
-                    bodyType
+                ex,
+                restTemplate,
+                url,
+                tokenUrl,
+                requestEntity,
+                httpMethod,
+                requestContext.getRestTemplateWrapperKey(),
+                requestEntity.getHeaders().getFirst(X_CSRF_TOKEN),
+                bodyType
             );
             return responseHandlerCallback.apply(responseEntity);
         }
     }
 
     private HttpHeaders createHttpHeadersForPublicApiMethods(
-            RequestContext requestContext,
-            RestTemplate restTemplate,
-            String tokenUrl
+        RequestContext requestContext,
+        RestTemplate restTemplate,
+        String tokenUrl
     ) {
         HttpHeaders httpHeaders = new HttpHeaders();
         httpHeaders.setContentType(MediaType.APPLICATION_JSON);
         if (requestContext.getPlatform().equals(Platform.API_MANAGEMENT) &&
-                requestContext.getAuthenticationType().equals(AuthenticationType.OAUTH)) {
+            requestContext.getAuthenticationType().equals(AuthenticationType.OAUTH)) {
             return httpHeaders;
         }
         String csrfToken = csrfTokenHolder.getCsrfToken(requestContext.getRestTemplateWrapperKey(), restTemplate, tokenUrl);
@@ -471,9 +500,9 @@ public class BaseClient {
 
             if (!HttpStatus.OK.equals(responseEntity.getStatusCode())) {
                 throw new ClientIntegrationException(String.format(
-                        "Couldn't fetch token for user: Code: %d, Message: %s",
-                        responseEntity.getStatusCode().value(),
-                        responseEntity.getBody())
+                    "Couldn't fetch token for user: Code: %d, Message: %s",
+                    responseEntity.getStatusCode().value(),
+                    responseEntity.getBody())
                 );
             }
 
@@ -502,7 +531,7 @@ public class BaseClient {
             restTemplateWrapper = restTemplateWrapperHolder.getOrCreateRestTemplateWrapperSingleton(requestContext.getRestTemplateWrapperKey());
         } else {
             restTemplateWrapper = restTemplateWrapperFactory.createRestTemplateWrapper(singleton(
-                    new BasicAuthenticationInterceptor(connectionProperties.getUsername(), connectionProperties.getPassword())
+                new BasicAuthenticationInterceptor(connectionProperties.getUsername(), connectionProperties.getPassword())
             ));
         }
         return restTemplateWrapper;
@@ -543,29 +572,29 @@ public class BaseClient {
     }
 
     private <RESULT> RESULT makeAuthRequestsIfNecessaryAndReturnNeededBody(
-            RequestContext requestContext,
-            String path,
-            ResponseEntity<RESULT> initialResponseEntity,
-            Class<RESULT> responseType
+        RequestContext requestContext,
+        String path,
+        ResponseEntity<RESULT> initialResponseEntity,
+        Class<RESULT> responseType
     ) {
         ResponseEntity<RESULT> responseEntity = makeAuthRequestsIfNecessaryAndReturnResponseEntity(
-                requestContext,
-                path,
-                initialResponseEntity,
-                null,
-                responseType,
-                1
+            requestContext,
+            path,
+            initialResponseEntity,
+            null,
+            responseType,
+            1
         );
         return responseEntity.getBody();
     }
 
     private <RESULT> ResponseEntity<RESULT> makeAuthRequestsIfNecessaryAndReturnResponseEntity(
-            RequestContext requestContext,
-            String path,
-            ResponseEntity<RESULT> initialResponseEntity,
-            HttpHeaders additionalHeaders,
-            Class<RESULT> responseType,
-            int numberOfAttempts
+        RequestContext requestContext,
+        String path,
+        ResponseEntity<RESULT> initialResponseEntity,
+        HttpHeaders additionalHeaders,
+        Class<RESULT> responseType,
+        int numberOfAttempts
     ) {
         try {
             String responseBodyString = getResponseBodyString(initialResponseEntity);
@@ -576,12 +605,12 @@ public class BaseClient {
             }
 
             ResponseEntity<RESULT> responseEntity = makeAuthRequestsWithLock(
-                    requestContext,
-                    path,
-                    additionalHeaders,
-                    responseType,
-                    responseBodyString,
-                    authorizationUrl
+                requestContext,
+                path,
+                additionalHeaders,
+                responseType,
+                responseBodyString,
+                authorizationUrl
             );
 
             log.debug("number of attempts = {}", numberOfAttempts);
@@ -590,16 +619,16 @@ public class BaseClient {
         } catch (HttpStatusCodeException ex) {
             //sometimes authorization requests fail due to unclear reason. That's why we need to do another attempt.
             if ((HttpStatus.BAD_REQUEST.equals(ex.getStatusCode()) || HttpStatus.INTERNAL_SERVER_ERROR.equals(ex.getStatusCode())) &&
-                    numberOfAttempts < MAX_NUMBER_OF_AUTH_ATTEMPTS
+                numberOfAttempts < MAX_NUMBER_OF_AUTH_ATTEMPTS
             ) {
                 log.warn("HttpStatusCodeException occurs: {}, {}", ex.getStatusCode(), ex.getMessage());
                 return makeAuthRequestsIfNecessaryAndReturnResponseEntity(
-                        requestContext,
-                        path,
-                        initialResponseEntity,
-                        additionalHeaders,
-                        responseType,
-                        numberOfAttempts + 1
+                    requestContext,
+                    path,
+                    initialResponseEntity,
+                    additionalHeaders,
+                    responseType,
+                    numberOfAttempts + 1
                 );
             } else {
                 throw ex;
@@ -614,12 +643,12 @@ public class BaseClient {
     }
 
     private <RESULT> ResponseEntity<RESULT> makeAuthRequestsWithLock(
-            RequestContext requestContext,
-            String path,
-            HttpHeaders additionalHeaders,
-            Class<RESULT> responseType,
-            String responseBodyString,
-            String authorizationUrl
+        RequestContext requestContext,
+        String path,
+        HttpHeaders additionalHeaders,
+        Class<RESULT> responseType,
+        String responseBodyString,
+        String authorizationUrl
     ) throws Exception {
         /*IRT-1891, IRT-4038: we need to do this because parallel authorizations cause serious problems
 
@@ -649,12 +678,12 @@ public class BaseClient {
             }
 
             ResponseEntity<RESULT> responseEntity = makeAuthRequests(
-                    requestContext,
-                    path,
-                    additionalHeaders,
-                    responseType,
-                    responseBodyString,
-                    authorizationUrl
+                requestContext,
+                path,
+                additionalHeaders,
+                responseType,
+                responseBodyString,
+                authorizationUrl
             );
 
             lockStatus.setAuthProcessed(true); // Mark the auth block as processed
@@ -804,8 +833,8 @@ public class BaseClient {
             return requestContext.getLoginPageUrl();
         }
         return String.format("%1$s/saml/discovery?returnIDParam=idp&entityID=%1$s&idp=%2$s&isPassive=true",
-                authorizationUrl,
-                requestContext.getIdpName()
+            authorizationUrl,
+            requestContext.getIdpName()
         );
     }
 
@@ -917,10 +946,10 @@ public class BaseClient {
     }
 
     private String authorizeAndGetLocationHeader(
-            RequestContext requestContext,
-            MultiValueMap<String, String> loginFormData,
-            String loginUrl,
-            List<String> cookies
+        RequestContext requestContext,
+        MultiValueMap<String, String> loginFormData,
+        String loginUrl,
+        List<String> cookies
     ) {
         log.debug("#authorizeAndGetLocationHeader(RequestContext requestContext, MultiValueMap<String, String> loginFormData, String loginUrl, List<String> cookies): {}, {}", requestContext, loginUrl);
 
@@ -956,10 +985,10 @@ public class BaseClient {
     }
 
     private ResponseEntity<String> authorize(
-            RequestContext requestContext,
-            MultiValueMap<String, String> map,
-            String loginUrl,
-            List<String> cookies
+        RequestContext requestContext,
+        MultiValueMap<String, String> map,
+        String loginUrl,
+        List<String> cookies
     ) {
         if (StringUtils.isEmpty(loginUrl)) {
             loginUrl = DEFAULT_SSO_URL;
@@ -978,16 +1007,16 @@ public class BaseClient {
     }
 
     private <RESP> ResponseEntity<RESP> executeRedirectRequestAfterSuccessfulAuthorization(
-            RequestContext requestContext,
-            String restTemplateWrapperKey,
-            String url,
-            String initialPath,
-            String signature,
-            HttpHeaders additionalHeaders,
-            Class<RESP> responseType
+        RequestContext requestContext,
+        String restTemplateWrapperKey,
+        String url,
+        String initialPath,
+        String signature,
+        HttpHeaders additionalHeaders,
+        Class<RESP> responseType
     ) throws Exception {
         log.debug("#executeRedirectRequestAfterSuccessfulAuthorization(RequestContext requestContext, String restTemplateWrapperKey, String url, String initialPath, String signature, HttpHeaders additionalHeaders, Class<T> responseType): {}, {}, {}, {}, {}, {}, {}",
-                requestContext, restTemplateWrapperKey, url, initialPath, signature, additionalHeaders, responseType
+            requestContext, restTemplateWrapperKey, url, initialPath, signature, additionalHeaders, responseType
         );
 
         String cookie = String.format("fragmentAfterLogin=; locationAfterLogin=%s; signature=%s", URLEncoder.encode(initialPath, "UTF-8"), signature);
@@ -1006,8 +1035,8 @@ public class BaseClient {
         } catch (HttpClientErrorException.Forbidden | HttpClientErrorException.NotFound ex) {
             if (requestContext.isUseCustomIdp()) {
                 throw new ClientIntegrationException(String.format("Please check that Role Collection Mappings are configured properly. " +
-                        "PI_Administrator, PI_Business_Expert and PI_Integration_Developer should be assigned to the Trust Configuration with the attribute 'Groups' and the value 'Admin'." +
-                        " Error message: %s", ExceptionUtils.getMessage(ex))
+                    "PI_Administrator, PI_Business_Expert and PI_Integration_Developer should be assigned to the Trust Configuration with the attribute 'Groups' and the value 'Admin'." +
+                    " Error message: %s", ExceptionUtils.getMessage(ex))
                 );
             } else {
                 throw ex;
@@ -1066,7 +1095,7 @@ public class BaseClient {
         if (logOnForm == null) {
             if (doc.getElementById("samlRedirect") != null) {
                 throw new ClientIntegrationException(
-                        String.format("It looks like the user is using SAP Universal ID. Figaf does not support it at the moment. Please create a user without SAP Universal ID. %s", html)
+                    String.format("It looks like the user is using SAP Universal ID. Figaf does not support it at the moment. Please create a user without SAP Universal ID. %s", html)
                 );
             } else {
                 throw new ClientIntegrationException(String.format("Can't find logOnForm element on the page: %s", html));
@@ -1103,10 +1132,10 @@ public class BaseClient {
     }
 
     private <RESP> ResponseEntity<RESP> executeGetPublicApi(
-            RequestContext requestContext,
-            String path,
-            HttpHeaders httpHeaders,
-            Class<RESP> bodyType
+        RequestContext requestContext,
+        String path,
+        HttpHeaders httpHeaders,
+        Class<RESP> bodyType
     ) {
         RestTemplate restTemplate = getOrCreateRestTemplateWrapperSingletonWithInterceptors(requestContext);
 
@@ -1120,39 +1149,39 @@ public class BaseClient {
         }
         HttpEntity<Map<String, String>> requestEntity = new HttpEntity<>(httpHeaders);
         return restTemplate.exchange(
-                url,
-                HttpMethod.GET,
-                requestEntity,
-                bodyType
+            url,
+            HttpMethod.GET,
+            requestEntity,
+            bodyType
         );
     }
 
     private <REQ, RESP> ResponseEntity<RESP> processForbiddenHttpClientErrorException(
-            HttpClientErrorException.Forbidden ex,
-            RestTemplate restTemplate,
-            String url,
-            String tokenUrl,
-            HttpEntity<REQ> requestEntity,
-            HttpMethod httpMethod,
-            String key,
-            String oldToken,
-            Class<RESP> bodyType
+        HttpClientErrorException.Forbidden ex,
+        RestTemplate restTemplate,
+        String url,
+        String tokenUrl,
+        HttpEntity<REQ> requestEntity,
+        HttpMethod httpMethod,
+        String key,
+        String oldToken,
+        Class<RESP> bodyType
     ) {
         if (ex.getResponseHeaders() != null &&
-                "required".equalsIgnoreCase(ex.getResponseHeaders().getFirst(X_CSRF_TOKEN))
+            "required".equalsIgnoreCase(ex.getResponseHeaders().getFirst(X_CSRF_TOKEN))
         ) {
             log.warn("xsrf token will be updated");
             return restTemplate.exchange(
-                    url,
-                    httpMethod,
-                    createRequestEntityWithNewCsrfToken(
-                            restTemplate,
-                            tokenUrl,
-                            requestEntity,
-                            key,
-                            oldToken
-                    ),
-                    bodyType
+                url,
+                httpMethod,
+                createRequestEntityWithNewCsrfToken(
+                    restTemplate,
+                    tokenUrl,
+                    requestEntity,
+                    key,
+                    oldToken
+                ),
+                bodyType
             );
         } else {
             throw ex;
@@ -1160,11 +1189,11 @@ public class BaseClient {
     }
 
     private <REQ> HttpEntity<REQ> createRequestEntityWithNewCsrfToken(
-            RestTemplate restTemplate,
-            String url,
-            HttpEntity<REQ> requestEntity,
-            String tokenKey,
-            String oldToken
+        RestTemplate restTemplate,
+        String url,
+        HttpEntity<REQ> requestEntity,
+        String tokenKey,
+        String oldToken
     ) {
         String csrfToken = csrfTokenHolder.getAndSaveNewCsrfTokenIfNeed(tokenKey, restTemplate, url, oldToken);
         HttpHeaders httpHeaders = new HttpHeaders();
