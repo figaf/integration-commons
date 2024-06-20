@@ -1035,7 +1035,8 @@ public class BaseClient {
         } catch (HttpClientErrorException.Forbidden | HttpClientErrorException.NotFound ex) {
             if (requestContext.isUseCustomIdp()) {
                 throw new ClientIntegrationException(String.format("Please check that Role Collection Mappings are configured properly. " +
-                    "PI_Administrator, PI_Business_Expert and PI_Integration_Developer should be assigned to the Trust Configuration with the attribute 'Groups' and the value 'Admin'." +
+                    "PI_Administrator, PI_Business_Expert and PI_Integration_Developer should be assigned to the Trust Configuration with the attribute 'Groups' and the value 'Admin'. " +
+                    "If you have been using the 'cpi-plugin', only PI_Integration_Developer should be assigned to the Trust Configuration with the attribute 'Groups' and the value 'Developer'." +
                     " Error message: %s", ExceptionUtils.getMessage(ex))
                 );
             } else {
