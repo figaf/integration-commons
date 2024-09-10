@@ -5,7 +5,7 @@ import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.ToString;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.http.client.HttpClient;
+import org.apache.hc.client5.http.classic.HttpClient;
 import org.springframework.http.client.ClientHttpRequestInterceptor;
 import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
 import org.springframework.http.converter.StringHttpMessageConverter;
@@ -34,7 +34,10 @@ public class RestTemplateWrapperFactory {
     }
 
     public RestTemplateWrapper createRestTemplateWrapper(boolean disableRedirect) {
-        HttpComponentsClientHttpRequestFactory httpComponentsClientHttpRequestFactory = httpClientsFactory.getHttpComponentsClientHttpRequestFactory(disableRedirect);
+        HttpComponentsClientHttpRequestFactory httpComponentsClientHttpRequestFactory = httpClientsFactory.getHttpComponentsClientHttpRequestFactory(
+            disableRedirect,
+            false
+        );
         HttpClient httpClient = httpComponentsClientHttpRequestFactory.getHttpClient();
         RestTemplate restTemplate = new RestTemplate(httpComponentsClientHttpRequestFactory);
         restTemplate.getMessageConverters().add(0, new StringHttpMessageConverter(StandardCharsets.UTF_8));

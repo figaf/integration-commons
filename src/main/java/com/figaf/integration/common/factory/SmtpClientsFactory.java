@@ -3,6 +3,7 @@ package com.figaf.integration.common.factory;
 import com.figaf.integration.common.socket.ConnectivitySocks5ProxySocket;
 import com.sap.cloud.security.xsuaa.client.OAuth2TokenResponse;
 import com.sap.cloud.security.xsuaa.tokenflows.TokenFlowException;
+import com.sap.cloud.security.xsuaa.tokenflows.XsuaaTokenFlows;
 import lombok.Getter;
 
 import java.util.Optional;
@@ -11,16 +12,15 @@ import java.util.Optional;
 public class SmtpClientsFactory {
 
     private final CloudConnectorParameters cloudConnectorParameters;
-
     private final CloudConnectorAccessTokenProvider accessTokenProvider;
-
     private final String locationId;
 
 
-    public static SmtpClientsFactory getForOnPremiseIntegration(String locationId) {
+    public static SmtpClientsFactory getForBtpToOnPremiseIntegration(String locationId, XsuaaTokenFlows xsuaaTokenFlows) {
+        CloudConnectorParameters connectorParameters = CloudConnectorParameters.getInstance();
         return new SmtpClientsFactory(
-            CloudConnectorParameters.getInstance(),
-            new CloudConnectorAccessTokenProvider(),
+            connectorParameters,
+            new CloudConnectorAccessTokenProvider(connectorParameters),
             locationId
         );
     }
@@ -33,7 +33,7 @@ public class SmtpClientsFactory {
     }
 
     public ConnectivitySocks5ProxySocket createAuthorizedSocks5ProxySocket() throws TokenFlowException {
-        OAuth2TokenResponse oAuth2TokenResponse = this.accessTokenProvider.getToken(cloudConnectorParameters);
+        OAuth2TokenResponse oAuth2TokenResponse = this.accessTokenProvider.getToken();
         return new ConnectivitySocks5ProxySocket(
             oAuth2TokenResponse.getAccessToken(),
             locationId,

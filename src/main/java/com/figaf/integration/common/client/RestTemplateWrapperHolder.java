@@ -2,6 +2,7 @@ package com.figaf.integration.common.client;
 
 import com.figaf.integration.common.entity.RestTemplateWrapper;
 import com.figaf.integration.common.factory.RestTemplateWrapperFactory;
+import com.figaf.integration.common.utils.HttpClientUtils;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.client.ClientHttpRequestInterceptor;
 import java.util.Collection;
@@ -49,11 +50,17 @@ public class RestTemplateWrapperHolder {
     }
 
     public static void deleteRestTemplateWrapper(String key) {
-        keyToRestTemplateWrapperMap.remove(key);
+        RestTemplateWrapper wrapperToRemove = keyToRestTemplateWrapperMap.remove(key);
+        if (wrapperToRemove != null) {
+            HttpClientUtils.closeQuietly(wrapperToRemove.getHttpClient());
+        }
     }
 
     public static void deleteRestTemplateWrapperSingletonWithInterceptors(String key) {
-        keyToRestTemplateWrapperWithInterceptorsMap.remove(key);
+        RestTemplateWrapper wrapperToRemove = keyToRestTemplateWrapperWithInterceptorsMap.remove(key);
+        if (wrapperToRemove != null) {
+            HttpClientUtils.closeQuietly(wrapperToRemove.getHttpClient());
+        }
     }
 
 }

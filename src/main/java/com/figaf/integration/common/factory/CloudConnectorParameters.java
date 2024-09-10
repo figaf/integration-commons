@@ -27,7 +27,7 @@ public class CloudConnectorParameters {
 
     private static final String HTTP_PROXY_HOST_PROPERTY = "onpremise_proxy_host";
 
-    private final static CloudConnectorParameters INSTANCE;
+    private static final CloudConnectorParameters INSTANCE;
 
     private String clientId;
 
@@ -72,6 +72,7 @@ public class CloudConnectorParameters {
         JSONObject connectivityCredentials = connectivityJsonArr.getJSONObject(0).getJSONObject("credentials");
         Integer connectionProxyPortSocks5 = connectivityCredentials.has(SOCKS5_PROXY_PORT_PROPERTY) ? Integer.valueOf(connectivityCredentials.getString(SOCKS5_PROXY_PORT_PROPERTY)) : null;
 
+        // client id and client secret are no longer needed because integration is provided within XsuaaTokenFlows
         CloudConnectorParameters.CloudConnectorParametersBuilder cloudConnectorParametersBuilder = CloudConnectorParameters.builder()
             .clientId(connectivityCredentials.getString("clientid"))
             .clientSecret(connectivityCredentials.getString("clientsecret"))

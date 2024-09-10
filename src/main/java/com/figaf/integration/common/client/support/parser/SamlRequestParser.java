@@ -2,13 +2,11 @@ package com.figaf.integration.common.client.support.parser;
 
 import com.figaf.integration.common.exception.ClientIntegrationException;
 import com.figaf.integration.common.exception.ParseSamlRequestException;
-import org.apache.http.NameValuePair;
-import org.apache.http.client.utils.URLEncodedUtils;
+import org.apache.hc.core5.http.NameValuePair;
+import org.apache.hc.core5.net.URIBuilder;
 
 import java.net.URI;
-import java.nio.charset.StandardCharsets;
 import java.util.Base64;
-import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.zip.DataFormatException;
@@ -25,8 +23,7 @@ public class SamlRequestParser {
             return null;
         }
 
-        List<NameValuePair> parse = URLEncodedUtils.parse(redirectUrl, StandardCharsets.UTF_8);
-        for (NameValuePair nameValuePair : parse) {
+        for (NameValuePair nameValuePair : new URIBuilder(redirectUrl).getQueryParams()) {
             if (nameValuePair.getName().equals("SAMLRequest")) {
                 return nameValuePair.getValue();
             }

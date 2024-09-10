@@ -45,17 +45,17 @@ import static org.springframework.http.HttpMethod.DELETE;
 @Slf4j
 public class BaseClient {
 
-    private final static int MAX_NUMBER_OF_AUTH_ATTEMPTS = 4;
-    private final static Pattern LOCATION_URL_PATTERN = Pattern.compile("location=\"(.*)\"<\\/script>");
-    private final static Pattern SIGNATURE_PATTERN = Pattern.compile("signature=(.*);path");
-    private final static Pattern LOGIN_URL_PATTERN = Pattern.compile("<meta name=\"redirect\"[\\s\\S]*content=\"(.*)\">");
-    private final static Pattern PWD_FORM_PATTERN = Pattern.compile("<form id=\"PwdForm\" action=\"([^\"]*)\".*name=\"X-Uaa-Csrf\" value=\"([^\"]*)\"");
-    private final static Pattern SAML_REDIRECT_FORM_PATTERN = Pattern.compile("<form id=\"samlRedirect\".*action=\"([^\"]*)\"");
-    private final static Pattern SAML_RESPONSE_PATTERN = Pattern.compile("id=\"SAMLResponse\" value=\"([^\"]*)\"");
-    private final static Pattern AUTHENTICITY_TOKEN_PATTERN = Pattern.compile("name=\"authenticity_token\".*value=\"([^\"]*)\"");
-    private final static Pattern DEFAULT_IDENTITY_PROVIDER_PATTERN = Pattern.compile("<a href=\"(https://accounts\\.sap\\.com/[^\"]*)\"");
+    private static final int MAX_NUMBER_OF_AUTH_ATTEMPTS = 4;
+    private static final Pattern LOCATION_URL_PATTERN = Pattern.compile("location=\"(.*)\"<\\/script>");
+    private static final Pattern SIGNATURE_PATTERN = Pattern.compile("signature=(.*);path");
+    private static final Pattern LOGIN_URL_PATTERN = Pattern.compile("<meta name=\"redirect\"[\\s\\S]*content=\"(.*)\">");
+    private static final Pattern PWD_FORM_PATTERN = Pattern.compile("<form id=\"PwdForm\" action=\"([^\"]*)\".*name=\"X-Uaa-Csrf\" value=\"([^\"]*)\"");
+    private static final Pattern SAML_REDIRECT_FORM_PATTERN = Pattern.compile("<form id=\"samlRedirect\".*action=\"([^\"]*)\"");
+    private static final Pattern SAML_RESPONSE_PATTERN = Pattern.compile("id=\"SAMLResponse\" value=\"([^\"]*)\"");
+    private static final Pattern AUTHENTICITY_TOKEN_PATTERN = Pattern.compile("name=\"authenticity_token\".*value=\"([^\"]*)\"");
+    private static final Pattern DEFAULT_IDENTITY_PROVIDER_PATTERN = Pattern.compile("<a href=\"(https://accounts\\.sap\\.com/[^\"]*)\"");
 
-    private final static String DEFAULT_SSO_URL = "https://accounts.sap.com/saml2/idp/sso";
+    private static final String DEFAULT_SSO_URL = "https://accounts.sap.com/saml2/idp/sso";
 
     private static final String X_CSRF_TOKEN = "X-CSRF-Token";
 
@@ -724,7 +724,12 @@ public class BaseClient {
             ResponseEntity<String> loginPageContentResponseEntity = getLoginPageContent(restTemplateWrapperKey, requestContext.getLoginPageUrl());
             List<String> cookies = loginPageContentResponseEntity.getHeaders().get(HttpHeaders.SET_COOKIE);
             MultiValueMap<String, String> loginFormData = buildLoginFormDataForSso(requestContext, loginPageContentResponseEntity.getBody());
-            redirectUrlReceivedAfterSuccessfulAuthorization = authorizeAndGetLocationHeader(requestContext, loginFormData, requestContext.getSsoUrl(), cookies);
+            redirectUrlReceivedAfterSuccessfulAuthorization = authorizeAndGetLocationHeader(
+                requestContext,
+                loginFormData,
+                requestContext.getSsoUrl(),
+                cookies
+            );
 
             ResponseEntity<RESULT> responseEntity = executeRedirectRequestAfterSuccessfulAuthorization(
                 requestContext,
@@ -742,7 +747,11 @@ public class BaseClient {
             if (samlRedirectUrl == null) {
                 return responseEntity;
             }
-            redirectUrlReceivedAfterSuccessfulAuthorization = authorizeViaSamlAndGetLocationHeader(restTemplateWrapperKey, responseBodyAsString, samlRedirectUrl);
+            redirectUrlReceivedAfterSuccessfulAuthorization = authorizeViaSamlAndGetLocationHeader(
+                restTemplateWrapperKey,
+                responseBodyAsString,
+                samlRedirectUrl
+            );
         } else {
             String authorizationPageContent = getAuthorizationPageContent(restTemplateWrapperKey, authorizationUrl);
             String loginPageUrl = getLoginPageUrlFromAuthorizationPage(authorizationPageContent);
@@ -756,7 +765,12 @@ public class BaseClient {
                 }
                 ResponseEntity<String> loginPageContentResponseEntity = getLoginPageContent(restTemplateWrapperKey, loginPageUrl);
                 MultiValueMap<String, String> loginFormData = buildLoginFormDataForSso(requestContext, loginPageContentResponseEntity.getBody());
-                redirectUrlReceivedAfterSuccessfulAuthorization = authorizeAndGetLocationHeader(requestContext, loginFormData, requestContext.getSsoUrl(), null);
+                redirectUrlReceivedAfterSuccessfulAuthorization = authorizeAndGetLocationHeader(
+                    requestContext,
+                    loginFormData,
+                    requestContext.getSsoUrl(),
+                    null
+                );
             } else {
                 Matcher matcher = PWD_FORM_PATTERN.matcher(authorizationPageContent);
                 String loginDoPath;
@@ -770,7 +784,12 @@ public class BaseClient {
 
                 MultiValueMap<String, String> loginFormData = buildLoginFormData(requestContext, csrfToken);
                 String loginUrl = buildLoginUrl(authorizationUrl, loginDoPath);
-                redirectUrlReceivedAfterSuccessfulAuthorization = authorizeAndGetLocationHeader(requestContext, loginFormData, loginUrl, null);
+                redirectUrlReceivedAfterSuccessfulAuthorization = authorizeAndGetLocationHeader(
+                    requestContext,
+                    loginFormData,
+                    loginUrl,
+                    null
+                );
             }
         }
 
@@ -990,20 +1009,25 @@ public class BaseClient {
         String loginUrl,
         List<String> cookies
     ) {
-        if (StringUtils.isEmpty(loginUrl)) {
-            loginUrl = DEFAULT_SSO_URL;
+        try {
+            if (StringUtils.isEmpty(loginUrl)) {
+                loginUrl = DEFAULT_SSO_URL;
+            }
+            HttpHeaders httpHeaders = new HttpHeaders();
+            if (CollectionUtils.isNotEmpty(cookies)) {
+                httpHeaders.add("Cookie", StringUtils.join(cookies, "; "));
+            }
+            HttpEntity<MultiValueMap<String, String>> request = new HttpEntity<>(map, httpHeaders);
+            RestTemplateWrapper restTemplateWrapper = restTemplateWrapperHolder.getOrCreateRestTemplateWrapperSingleton(requestContext.getRestTemplateWrapperKey());
+            ResponseEntity<String> response = restTemplateWrapper.getRestTemplate().postForEntity(loginUrl, request, String.class);
+            if (StringUtils.contains(response.getBody(), "Sorry, we could not authenticate you")) {
+                throw new ClientIntegrationException("Login/password are not correct");
+            }
+            return response;
+        } catch (Exception ex) {
+            log.error("Error: " + ex.getMessage(), ex);
+            throw ex;
         }
-        HttpHeaders httpHeaders = new HttpHeaders();
-        if (CollectionUtils.isNotEmpty(cookies)) {
-            httpHeaders.add("Cookie", StringUtils.join(cookies, "; "));
-        }
-        HttpEntity<MultiValueMap<String, String>> request = new HttpEntity<>(map, httpHeaders);
-        RestTemplateWrapper restTemplateWrapper = restTemplateWrapperHolder.getOrCreateRestTemplateWrapperSingleton(requestContext.getRestTemplateWrapperKey());
-        ResponseEntity<String> response = restTemplateWrapper.getRestTemplate().postForEntity(loginUrl, request, String.class);
-        if (StringUtils.contains(response.getBody(), "Sorry, we could not authenticate you")) {
-            throw new ClientIntegrationException("Login/password are not correct");
-        }
-        return response;
     }
 
     private <RESP> ResponseEntity<RESP> executeRedirectRequestAfterSuccessfulAuthorization(
