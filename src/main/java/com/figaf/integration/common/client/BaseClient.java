@@ -170,25 +170,71 @@ public class BaseClient {
     ) {
         RESPONSE responseBody;
         if (CloudPlatformType.CLOUD_FOUNDRY.equals(requestContext.getCloudPlatformType())) {
-            ResponseEntity<RESPONSE> initialResponseEntity = executeGetRequestReturningTextBody(requestContext, path, bodyType);
-            responseBody = makeAuthRequestsIfNecessaryAndReturnNeededBody(requestContext, path, initialResponseEntity, bodyType);
+            ResponseEntity<RESPONSE> initialResponseEntity = executeGetRequestReturningTextBody(
+                requestContext,
+                null,
+                path,
+                bodyType
+            );
+            responseBody = makeAuthRequestsIfNecessaryAndReturnNeededBody(
+                requestContext,
+                null,
+                path,
+                initialResponseEntity,
+                bodyType
+            );
         } else {
-            responseBody = executeGetRequestWithBasicAuthReturningTextBody(requestContext, path, bodyType);
+            responseBody = executeGetRequestWithBasicAuthReturningTextBody(
+                requestContext,
+                path,
+                null,
+                bodyType
+            );
         }
 
-        RESULT response;
-        try {
-            response = responseHandlerCallback.apply(responseBody);
-        } catch (ClientIntegrationException ex) {
-            throwSpecificExceptionIfSsoUrlIsWrong(requestContext, ex);
-            throw ex;
-        } catch (Exception ex) {
-            log.error("Can't handle response body: ", ex);
-            throwSpecificExceptionIfSsoUrlIsWrong(requestContext, ex);
-            throw new ClientIntegrationException(ex);
+        return processResponse(
+            requestContext,
+            responseHandlerCallback,
+            responseBody
+        );
+    }
+
+    public <RESULT, RESPONSE> RESULT executeGet(
+        RequestContext requestContext,
+        HttpHeaders additionalHeaders,
+        String path,
+        ResponseHandlerCallback<RESULT, RESPONSE> responseHandlerCallback,
+        Class<RESPONSE> bodyType
+    ) {
+        RESPONSE responseBody;
+        if (CloudPlatformType.CLOUD_FOUNDRY.equals(requestContext.getCloudPlatformType())) {
+            ResponseEntity<RESPONSE> initialResponseEntity = executeGetRequestReturningTextBody(
+                requestContext,
+                additionalHeaders,
+                path,
+                bodyType
+            );
+            responseBody = makeAuthRequestsIfNecessaryAndReturnNeededBody(
+                requestContext,
+                additionalHeaders,
+                path,
+                initialResponseEntity,
+                bodyType
+            );
+        } else {
+            responseBody = executeGetRequestWithBasicAuthReturningTextBody(
+                requestContext,
+                path,
+                additionalHeaders,
+                bodyType
+            );
         }
 
-        return response;
+        return processResponse(
+            requestContext,
+            responseHandlerCallback,
+            responseBody
+        );
     }
 
     public <RESULT> RESULT executeMethod(
@@ -262,12 +308,12 @@ public class BaseClient {
     }
 
     public <RESULT, REQ> RESULT executeMethodPublicApiWithCustomHeaders(
-            RequestContext requestContext,
-            String pathForMainRequest,
-            REQ requestBody,
-            HttpMethod httpMethod,
-            HttpHeaders httpHeaders,
-            ResponseHandlerCallback<RESULT, ResponseEntity<String>> responseHandlerCallback
+        RequestContext requestContext,
+        String pathForMainRequest,
+        REQ requestBody,
+        HttpMethod httpMethod,
+        HttpHeaders httpHeaders,
+        ResponseHandlerCallback<RESULT, ResponseEntity<String>> responseHandlerCallback
     ) {
         try {
             RestTemplate restTemplate = getOrCreateRestTemplateWrapperSingletonWithInterceptors(requestContext);
@@ -275,14 +321,14 @@ public class BaseClient {
             String url = buildUrl(requestContext, pathForMainRequest);
             HttpEntity<REQ> requestEntity = new HttpEntity<>(requestBody, httpHeaders);
             return executeMethodPublicApi(
-                    requestContext,
-                    restTemplate,
-                    url,
-                    tokenUrl,
-                    httpMethod,
-                    requestEntity,
-                    responseHandlerCallback,
-                    String.class
+                requestContext,
+                restTemplate,
+                url,
+                tokenUrl,
+                httpMethod,
+                requestEntity,
+                responseHandlerCallback,
+                String.class
             );
         } catch (ClientIntegrationException ex) {
             throw ex;
@@ -537,11 +583,21 @@ public class BaseClient {
         return restTemplateWrapper;
     }
 
-    private <RESULT> ResponseEntity<RESULT> executeGetRequestReturningTextBody(RequestContext requestContext, String path, Class<RESULT> bodyType) {
+    private <RESULT> ResponseEntity<RESULT> executeGetRequestReturningTextBody(
+        RequestContext requestContext,
+        HttpHeaders httpHeaders,
+        String path,
+        Class<RESULT> bodyType
+    ) {
         ConnectionProperties connectionProperties = requestContext.getConnectionProperties();
         final String url = buildUrl(connectionProperties, path);
+        RequestEntity requestEntity;
         try {
-            RequestEntity requestEntity = new RequestEntity(HttpMethod.GET, new URI(url));
+            if (httpHeaders == null) {
+                requestEntity = new RequestEntity(HttpMethod.GET, new URI(url));
+            } else {
+                requestEntity = new RequestEntity(httpHeaders, HttpMethod.GET, new URI(url));
+            }
             RestTemplateWrapper restTemplateWrapper = restTemplateWrapperHolder.getOrCreateRestTemplateWrapperSingleton(requestContext.getRestTemplateWrapperKey());
             ResponseEntity<RESULT> responseEntity = restTemplateWrapper.getRestTemplate().exchange(requestEntity, bodyType);
             return responseEntity;
@@ -554,12 +610,22 @@ public class BaseClient {
         }
     }
 
-    private <RESULT> RESULT executeGetRequestWithBasicAuthReturningTextBody(RequestContext requestContext, String path, Class<RESULT> bodyType) {
+    private <RESULT> RESULT executeGetRequestWithBasicAuthReturningTextBody(
+        RequestContext requestContext,
+        String path,
+        HttpHeaders httpHeaders,
+        Class<RESULT> bodyType
+    ) {
         ConnectionProperties connectionProperties = requestContext.getConnectionProperties();
         final String url = buildUrl(connectionProperties, path);
         try {
             RestTemplate restTemplateWithBasicAuth = httpClientsFactory.createRestTemplate(new BasicAuthenticationInterceptor(connectionProperties.getUsername(), connectionProperties.getPassword()));
-            RequestEntity requestEntity = new RequestEntity(HttpMethod.GET, new URI(url));
+            RequestEntity requestEntity;
+            if (httpHeaders == null) {
+                requestEntity = new RequestEntity(HttpMethod.GET, new URI(url));
+            } else {
+                requestEntity = new RequestEntity(httpHeaders, HttpMethod.GET, new URI(url));
+            }
             ResponseEntity<RESULT> responseEntity = restTemplateWithBasicAuth.exchange(requestEntity, bodyType);
             return responseEntity.getBody();
         } catch (ClientIntegrationException ex) {
@@ -573,6 +639,7 @@ public class BaseClient {
 
     private <RESULT> RESULT makeAuthRequestsIfNecessaryAndReturnNeededBody(
         RequestContext requestContext,
+        HttpHeaders additionalHeaders,
         String path,
         ResponseEntity<RESULT> initialResponseEntity,
         Class<RESULT> responseType
@@ -581,7 +648,7 @@ public class BaseClient {
             requestContext,
             path,
             initialResponseEntity,
-            null,
+            additionalHeaders,
             responseType,
             1
         );
@@ -674,7 +741,7 @@ public class BaseClient {
         try {
             if (lockStatus.isAuthProcessed()) {
                 log.debug("skipping authentication, trying to execute the main query");
-                return executeGetRequestReturningTextBody(requestContext, path, responseType);
+                return executeGetRequestReturningTextBody(requestContext, null, path, responseType);
             }
 
             ResponseEntity<RESULT> responseEntity = makeAuthRequests(
@@ -1231,6 +1298,25 @@ public class BaseClient {
         if (requestContext.isUseCustomIdp() && !requestContext.getSsoUrl().contains("/saml/SSO/")) {
             throw new ClientIntegrationException(String.format("SSO Url '%s' seems to be wrong (it should contain '/saml/SSO/'): %s", requestContext.getSsoUrl(), ExceptionUtils.getMessage(ex)));
         }
+    }
+
+    private <RESULT, RESPONSE> RESULT processResponse(
+        RequestContext requestContext,
+        ResponseHandlerCallback<RESULT, RESPONSE> responseHandlerCallback,
+        RESPONSE responseBody
+    ) {
+        RESULT response;
+        try {
+            response = responseHandlerCallback.apply(responseBody);
+        } catch (ClientIntegrationException ex) {
+            throwSpecificExceptionIfSsoUrlIsWrong(requestContext, ex);
+            throw ex;
+        } catch (Exception ex) {
+            log.error("Can't handle response body: ", ex);
+            throwSpecificExceptionIfSsoUrlIsWrong(requestContext, ex);
+            throw new ClientIntegrationException(ex);
+        }
+        return response;
     }
 
     @Getter
