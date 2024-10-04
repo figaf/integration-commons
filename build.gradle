@@ -4,13 +4,33 @@ plugins {
 }
 
 group = 'com.github.figaf'
-version = '1.29-SNAPSHOT'
+version = '2.0-SNAPSHOT'
 
 ext {
     enableSnapshotsForDependencyResolutionAndPublishing = project.findProperty('enableSnapshots') ?: 'false'
     snapshotsRepoUrl = project.findProperty('snapshotsRepoUrl') ?: ''
     snapshotsRepoUsername = project.findProperty('snapshotsRepoUsername') ?: ''
     snapshotsRepoPassword = project.findProperty('snapshotsRepoPassword') ?: ''
+
+    lombokVersion = '1.18.34'
+    slf4jVersion = '2.0.16'
+    logbackVersion = '1.5.7'
+    commonsCollectionsVersion = '4.4'
+    commonsLangVersion = '3.17.0'
+    commonsCodecVersion = '1.17.1'
+    commonsTextVersion = '1.12.0'
+    commonsIoVersion = '2.16.1'
+    httpClientVersion = '5.3.1'
+    springVersion = '6.1.12'
+    springSecurityVersion = '6.3.3'
+    jsonVersion = '20240303'
+    jacksonVersion = '2.17.2'
+    jsoupVersion = '1.18.1'
+    sapTokenClientVersion = '3.5.3'
+    icu4jVersion = '75.1'
+    dom4jVersion = '2.1.4'
+    jacksonVersion = '2.17.2'
+    proxyVoleVersion = '1.1.5'
 }
 
 repositories {
@@ -30,25 +50,32 @@ repositories {
 
 dependencies {
 
-    compileOnly("org.projectlombok:lombok:1.18.8")
-    annotationProcessor 'org.projectlombok:lombok:1.18.8'
+    compileOnly "org.projectlombok:lombok:${lombokVersion}"
+    annotationProcessor "org.projectlombok:lombok:${lombokVersion}"
 
-    api 'org.apache.commons:commons-lang3:3.9'
-    api 'org.apache.commons:commons-collections4:4.4'
-    api 'commons-io:commons-io:2.5'
-    api 'org.apache.httpcomponents:httpclient:4.5.3'
-    api 'org.springframework:spring-web:5.1.4.RELEASE'
-    api 'org.springframework.security:spring-security-oauth2-client:5.3.5.RELEASE'
-    api 'org.json:json:20180813'
-    api 'com.fasterxml.jackson.dataformat:jackson-dataformat-xml:2.9.8'
+    api "org.apache.commons:commons-lang3:${commonsLangVersion}"
+    api "org.apache.commons:commons-collections4:${commonsCollectionsVersion}"
+    api "commons-io:commons-io:${commonsIoVersion}"
+    api "commons-codec:commons-codec:${commonsCodecVersion}"
+    api "org.apache.httpcomponents.client5:httpclient5:${httpClientVersion}"
+    api "org.springframework:spring-web:${springVersion}"
+    api "org.springframework.security:spring-security-oauth2-client:${springSecurityVersion}"
+    api "org.json:json:${jsonVersion}"
+    api "com.fasterxml.jackson.dataformat:jackson-dataformat-xml:${jacksonVersion}"
+    api "com.sap.cloud.security.xsuaa:token-client:${sapTokenClientVersion}"
 
-    implementation 'org.jsoup:jsoup:1.13.1'
-    implementation 'org.bidib.com.github.markusbernhardt:proxy-vole:1.1.0'
-    implementation 'com.sap.cloud.security.xsuaa:spring-xsuaa:2.8.0'
+    implementation "org.jsoup:jsoup:${jsoupVersion}"
+    implementation ("org.bidib.com.github.markusbernhardt:proxy-vole:${proxyVoleVersion}") {
+        exclude group: 'commons-logging', module: 'commons-logging'
+    }
 }
 
 configurations.configureEach {
     resolutionStrategy.cacheChangingModulesFor 0, 'seconds'
+}
+
+java {
+    withSourcesJar()
 }
 
 publishing {

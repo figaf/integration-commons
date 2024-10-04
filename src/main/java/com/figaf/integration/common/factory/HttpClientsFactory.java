@@ -1,19 +1,33 @@
 package com.figaf.integration.common.factory;
 
+import com.figaf.integration.common.client.support.RestrictedRedirectStrategy;
 import com.figaf.integration.common.client.support.SapAirKeyHeaderInterceptor;
 import com.github.markusbernhardt.proxy.ProxySearch;
+import com.sap.cloud.security.xsuaa.tokenflows.XsuaaTokenFlows;
 import lombok.Getter;
 import lombok.ToString;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.http.HttpHost;
-import org.apache.http.client.HttpClient;
-import org.apache.http.client.config.CookieSpecs;
-import org.apache.http.client.config.RequestConfig;
-import org.apache.http.conn.ssl.SSLConnectionSocketFactory;
-import org.apache.http.impl.client.HttpClientBuilder;
-import org.apache.http.impl.client.HttpClients;
-import org.apache.http.impl.conn.DefaultProxyRoutePlanner;
-import org.apache.http.impl.conn.SystemDefaultRoutePlanner;
+import org.apache.hc.client5.http.classic.HttpClient;
+import org.apache.hc.client5.http.config.ConnectionConfig;
+import org.apache.hc.client5.http.config.RequestConfig;
+import org.apache.hc.client5.http.config.TlsConfig;
+import org.apache.hc.client5.http.cookie.StandardCookieSpec;
+import org.apache.hc.client5.http.impl.classic.HttpClientBuilder;
+import org.apache.hc.client5.http.impl.classic.HttpClients;
+import org.apache.hc.client5.http.impl.io.PoolingHttpClientConnectionManager;
+import org.apache.hc.client5.http.impl.io.PoolingHttpClientConnectionManagerBuilder;
+import org.apache.hc.client5.http.impl.routing.DefaultProxyRoutePlanner;
+import org.apache.hc.client5.http.impl.routing.SystemDefaultRoutePlanner;
+import org.apache.hc.client5.http.ssl.SSLConnectionSocketFactory;
+import org.apache.hc.client5.http.ssl.SSLConnectionSocketFactoryBuilder;
+import org.apache.hc.core5.http.HttpHost;
+import org.apache.hc.core5.http.io.SocketConfig;
+import org.apache.hc.core5.http.ssl.TLS;
+import org.apache.hc.core5.pool.PoolConcurrencyPolicy;
+import org.apache.hc.core5.pool.PoolReusePolicy;
+import org.apache.hc.core5.ssl.SSLContexts;
+import org.apache.hc.core5.util.TimeValue;
+import org.apache.hc.core5.util.Timeout;
 import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
 import org.springframework.http.client.support.BasicAuthenticationInterceptor;
 import org.springframework.http.converter.StringHttpMessageConverter;
@@ -34,7 +48,7 @@ public class HttpClientsFactory {
     private final int connectionRequestTimeout;
     private final int connectTimeout;
     private final int socketTimeout;
-    private final boolean useForOnPremiseIntegration;
+    private final boolean useForBtpToOnPremiseIntegration;
     private final String locationId;
     private final String sapAirKey;
 
@@ -43,39 +57,39 @@ public class HttpClientsFactory {
     private DefaultProxyRoutePlanner defaultProxyRoutePlanner;
 
     public static HttpClientsFactory getForOnPremiseIntegration(
-            boolean useProxyForConnections,
-            int connectionRequestTimeout,
-            int connectTimeout,
-            int socketTimeout,
-            String locationId,
-            String sapAirKey
+        boolean useProxyForConnections,
+        int connectionRequestTimeout,
+        int connectTimeout,
+        int socketTimeout,
+        String locationId,
+        String sapAirKey
     ) {
         return new HttpClientsFactory(
-                useProxyForConnections,
-                connectionRequestTimeout,
-                connectTimeout,
-                socketTimeout,
-                true,
-                locationId,
-                sapAirKey
+            useProxyForConnections,
+            connectionRequestTimeout,
+            connectTimeout,
+            socketTimeout,
+            true,
+            locationId,
+            sapAirKey
         );
     }
 
-    public static HttpClientsFactory getForOnCloudIntegration(
-            boolean useProxyForConnections,
-            int connectionRequestTimeout,
-            int connectTimeout,
-            int socketTimeout,
-            String sapAirKey
+    public static HttpClientsFactory getForCloudIntegration(
+        boolean useProxyForConnections,
+        int connectionRequestTimeout,
+        int connectTimeout,
+        int socketTimeout,
+        String sapAirKey
     ) {
         return new HttpClientsFactory(
-                useProxyForConnections,
-                connectionRequestTimeout,
-                connectTimeout,
-                socketTimeout,
-                false,
-                null,
-                sapAirKey
+            useProxyForConnections,
+            connectionRequestTimeout,
+            connectTimeout,
+            socketTimeout,
+            false,
+            null,
+            sapAirKey
         );
     }
 
@@ -84,7 +98,7 @@ public class HttpClientsFactory {
         this.connectionRequestTimeout = 300000;
         this.connectTimeout = 300000;
         this.socketTimeout = 300000;
-        this.useForOnPremiseIntegration = false;
+        this.useForBtpToOnPremiseIntegration = false;
         this.locationId = null;
         this.sapAirKey = null;
         this.oAuthHttpRequestInterceptor = null;
@@ -93,17 +107,17 @@ public class HttpClientsFactory {
     }
 
     public HttpClientsFactory(
-            boolean useProxyForConnections,
-            int connectionRequestTimeout,
-            int connectTimeout,
-            int socketTimeout
+        boolean useProxyForConnections,
+        int connectionRequestTimeout,
+        int connectTimeout,
+        int socketTimeout
     ) {
         log.info("useProxyForConnections = {}", useProxyForConnections);
         this.useProxyForConnections = useProxyForConnections;
         this.connectionRequestTimeout = connectionRequestTimeout;
         this.connectTimeout = connectTimeout;
         this.socketTimeout = socketTimeout;
-        this.useForOnPremiseIntegration = false;
+        this.useForBtpToOnPremiseIntegration = false;
         this.locationId = null;
         this.sapAirKey = null;
         this.sapAirKeyHeaderInterceptor = null;
@@ -111,18 +125,18 @@ public class HttpClientsFactory {
     }
 
     public HttpClientsFactory(
-            boolean useProxyForConnections,
-            int connectionRequestTimeout,
-            int connectTimeout,
-            int socketTimeout,
-            String sapAirKey
+        boolean useProxyForConnections,
+        int connectionRequestTimeout,
+        int connectTimeout,
+        int socketTimeout,
+        String sapAirKey
     ) {
         log.info("useProxyForConnections = {}", useProxyForConnections);
         this.useProxyForConnections = useProxyForConnections;
         this.connectionRequestTimeout = connectionRequestTimeout;
         this.connectTimeout = connectTimeout;
         this.socketTimeout = socketTimeout;
-        this.useForOnPremiseIntegration = false;
+        this.useForBtpToOnPremiseIntegration = false;
         this.locationId = null;
         this.sapAirKey = sapAirKey;
         this.sapAirKeyHeaderInterceptor = new SapAirKeyHeaderInterceptor(this.sapAirKey);
@@ -130,20 +144,22 @@ public class HttpClientsFactory {
     }
 
     public HttpClientsFactory(
-            boolean useProxyForConnections,
-            int connectionRequestTimeout,
-            int connectTimeout,
-            int socketTimeout,
-            boolean useForOnPremiseIntegration,
-            String locationId,
-            String sapAirKey
+        boolean useProxyForConnections,
+        int connectionRequestTimeout,
+        int connectTimeout,
+        int socketTimeout,
+        boolean useForBtpToOnPremiseIntegration,
+        String locationId,
+        String sapAirKey
     ) {
-        log.info("useProxyForConnections = {}, useForOnPremiseIntegration = {}, locationId = {}", useProxyForConnections, useForOnPremiseIntegration, locationId);
+        log.info("useProxyForConnections = {}, useForBtpToOnPremiseIntegration = {}, locationId = {}",
+            useProxyForConnections, useForBtpToOnPremiseIntegration, locationId
+        );
         this.useProxyForConnections = useProxyForConnections;
         this.connectionRequestTimeout = connectionRequestTimeout;
         this.connectTimeout = connectTimeout;
         this.socketTimeout = socketTimeout;
-        this.useForOnPremiseIntegration = useForOnPremiseIntegration;
+        this.useForBtpToOnPremiseIntegration = useForBtpToOnPremiseIntegration;
         this.locationId = locationId;
         this.sapAirKey = sapAirKey;
         this.sapAirKeyHeaderInterceptor = new SapAirKeyHeaderInterceptor(this.sapAirKey);
@@ -173,7 +189,7 @@ public class HttpClientsFactory {
     }
 
     private void applyCloudConnectorParameters(String locationId) {
-        if (!this.useForOnPremiseIntegration) {
+        if (!this.useForBtpToOnPremiseIntegration) {
             this.oAuthHttpRequestInterceptor = null;
             this.defaultProxyRoutePlanner = null;
             return;
@@ -194,58 +210,117 @@ public class HttpClientsFactory {
         log.info("CloudConnectorParameters are applied: {}", cloudConnectorParameters);
     }
 
-    public HttpClientBuilder getHttpClientBuilder() {
-        return getHttpClientBuilder(false);
+    public HttpClientBuilder getHttpClientBuilder(boolean disableRedirect) {
+        return getHttpClientBuilder(
+            null,
+            0,
+            0,
+            disableRedirect
+        );
     }
 
-    public HttpClientBuilder getHttpClientBuilder(boolean disableRedirect) {
-        HttpClientBuilder httpClientBuilder = HttpClients.custom();
+    public HttpClientBuilder getHttpClientBuilder(SSLConnectionSocketFactory sslConnectionSocketFactory) {
+        return getHttpClientBuilder(sslConnectionSocketFactory, 0, 0, false);
+    }
+
+    public HttpClientBuilder getHttpClientBuilder(
+        SSLConnectionSocketFactory sslConnectionSocketFactory,
+        int maxConnPerRoute,
+        int maxConnTotal,
+        boolean disableRedirect
+    ) {
+        PoolingHttpClientConnectionManager connectionManager = PoolingHttpClientConnectionManagerBuilder.create()
+            .setSSLSocketFactory(sslConnectionSocketFactory)
+            .setDefaultTlsConfig(TlsConfig.custom()
+                .setHandshakeTimeout(Timeout.ofSeconds(30))
+                .setSupportedProtocols(TLS.V_1_3)
+                .build())
+            .setDefaultSocketConfig(SocketConfig.custom()
+                .setSoTimeout(Timeout.ofMilliseconds(socketTimeout))
+                .build())
+            .setPoolConcurrencyPolicy(PoolConcurrencyPolicy.STRICT)
+            .setConnPoolPolicy(PoolReusePolicy.LIFO)
+            .setMaxConnPerRoute(maxConnPerRoute)
+            .setMaxConnTotal(maxConnTotal)
+            .setDefaultConnectionConfig(ConnectionConfig.custom()
+                .setSocketTimeout(Timeout.ofMilliseconds(socketTimeout))
+                .setConnectTimeout(Timeout.ofMilliseconds(connectTimeout))
+                .setTimeToLive(TimeValue.ofMinutes(10))
+                .build())
+            .build();
+
+        HttpClientBuilder httpClientBuilder = HttpClients.custom()
+            .setConnectionManager(connectionManager);
         RequestConfig requestConfig = RequestConfig.custom()
-                .setConnectionRequestTimeout(connectionRequestTimeout)
-                .setConnectTimeout(connectTimeout)
-                .setSocketTimeout(socketTimeout)
-                .setCookieSpec(CookieSpecs.STANDARD)
-                .build();
+            .setConnectionRequestTimeout(Timeout.ofMilliseconds(connectionRequestTimeout))
+            .setCookieSpec(StandardCookieSpec.STRICT)
+            .build();
         httpClientBuilder.setDefaultRequestConfig(requestConfig);
+        httpClientBuilder.setRedirectStrategy(RestrictedRedirectStrategy.INSTANCE);
         if (useProxyForConnections) {
             httpClientBuilder.setRoutePlanner(new SystemDefaultRoutePlanner(ProxySelector.getDefault()));
         }
-        if (useForOnPremiseIntegration) {
-            httpClientBuilder.addInterceptorFirst(oAuthHttpRequestInterceptor);
+        if (useForBtpToOnPremiseIntegration && CloudConnectorParameters.getInstance() != null) {
+            httpClientBuilder.addRequestInterceptorFirst(oAuthHttpRequestInterceptor);
             httpClientBuilder.setRoutePlanner(defaultProxyRoutePlanner);
         }
         if (disableRedirect) {
             httpClientBuilder.disableRedirectHandling();
         }
         if (sapAirKeyHeaderInterceptor != null) {
-            httpClientBuilder.addInterceptorFirst(sapAirKeyHeaderInterceptor);
+            httpClientBuilder.addRequestInterceptorFirst(sapAirKeyHeaderInterceptor);
         }
         return httpClientBuilder;
     }
 
-    public HttpClientBuilder getHttpClientBuilder(SSLConnectionSocketFactory sslConnectionSocketFactory) {
-        HttpClientBuilder httpClientBuilder = getHttpClientBuilder();
-        return httpClientBuilder.setSSLSocketFactory(sslConnectionSocketFactory);
-    }
-
     public HttpClient createHttpClient() {
-        return createHttpClient(false);
+        return createHttpClient(false, false);
     }
 
-    public HttpClient createHttpClient(boolean disableRedirect) {
-        return getHttpClientBuilder(disableRedirect).build();
+    public HttpClient createHttpClient(boolean disableRedirect, boolean initDefaultSslConnectionSocketFactory) {
+        SSLConnectionSocketFactory defaultFactory = null;
+        if (initDefaultSslConnectionSocketFactory) {
+            defaultFactory = SSLConnectionSocketFactoryBuilder.create()
+                .setSslContext(SSLContexts.createSystemDefault())
+                .setTlsVersions(TLS.V_1_3)
+                .build();
+        }
+        return getHttpClientBuilder(
+            defaultFactory,
+            0,
+            0,
+            disableRedirect
+        ).build();
     }
 
     public HttpClient createHttpClient(SSLConnectionSocketFactory sslConnectionSocketFactory) {
         return getHttpClientBuilder(sslConnectionSocketFactory).build();
     }
 
-    public HttpComponentsClientHttpRequestFactory getHttpComponentsClientHttpRequestFactory() {
-        return getHttpComponentsClientHttpRequestFactory(false);
+    public HttpClient createHttpClient(SSLConnectionSocketFactory sslConnectionSocketFactory, boolean disableRedirect) {
+        return getHttpClientBuilder(sslConnectionSocketFactory, 0, 0, disableRedirect).build();
     }
 
-    public HttpComponentsClientHttpRequestFactory getHttpComponentsClientHttpRequestFactory(boolean disableRedirect) {
-        return new CustomHttpComponentsClientHttpRequestFactory(createHttpClient(disableRedirect));
+    public HttpClient createHttpClient(
+        SSLConnectionSocketFactory sslConnectionSocketFactory,
+        int maxConnPerRoute,
+        int maxConnTotal,
+        boolean disableRedirect
+    ) {
+        return getHttpClientBuilder(sslConnectionSocketFactory, maxConnPerRoute, maxConnTotal, disableRedirect).build();
+    }
+
+    public HttpComponentsClientHttpRequestFactory getHttpComponentsClientHttpRequestFactory() {
+        return getHttpComponentsClientHttpRequestFactory(false, false);
+    }
+
+    public HttpComponentsClientHttpRequestFactory getHttpComponentsClientHttpRequestFactory(
+        boolean disableRedirect,
+        boolean initDefaultSslConnectionSocketFactory
+    ) {
+        return new HttpComponentsClientHttpRequestFactory(
+            createHttpClient(disableRedirect, initDefaultSslConnectionSocketFactory)
+        );
     }
 
     public RestTemplate createRestTemplate(BasicAuthenticationInterceptor basicAuthenticationInterceptor) {
