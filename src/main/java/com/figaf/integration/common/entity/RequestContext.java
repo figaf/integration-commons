@@ -29,6 +29,7 @@ public class RequestContext {
     private String clientId;
     private String clientSecret;
     private AuthenticationType authenticationType;
+    private String runtimeLocationId;
 
     public RequestContext(
         ConnectionProperties connectionProperties,
