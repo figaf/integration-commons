@@ -7,6 +7,7 @@ import com.figaf.integration.common.entity.*;
 import com.figaf.integration.common.exception.ClientIntegrationException;
 import com.figaf.integration.common.factory.HttpClientsFactory;
 import com.figaf.integration.common.factory.RestTemplateWrapperFactory;
+import com.figaf.integration.common.utils.Utils;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
@@ -603,8 +604,12 @@ public class BaseClient {
             return responseEntity;
         } catch (ClientIntegrationException ex) {
             throw ex;
+        } catch (HttpClientErrorException.NotFound ex) {
+            throw new ClientIntegrationException(format("Can't execute GET %s successfully: %s", url, ex.getMessage()));
         } catch (Exception ex) {
-            String errorMessage = String.format("Can't execute GET request %s successfully: ", url);
+            String errorMessage = format("Can't execute GET %s successfully: %s",
+                url, Utils.extractMessageAndRootCauseMessage(ex, false)
+            );
             log.error(errorMessage, ex);
             throw new ClientIntegrationException(errorMessage, ex);
         }
@@ -630,8 +635,12 @@ public class BaseClient {
             return responseEntity.getBody();
         } catch (ClientIntegrationException ex) {
             throw ex;
+        } catch (HttpClientErrorException.NotFound ex) {
+            throw new ClientIntegrationException(format("Can't execute GET %s successfully: %s", url, ex.getMessage()), ex);
         } catch (Exception ex) {
-            String errorMessage = String.format("Can't execute GET request %s successfully: ", url);
+            String errorMessage = format("Can't execute GET %s successfully: %s",
+                url, Utils.extractMessageAndRootCauseMessage(ex, false)
+            );
             log.error(errorMessage, ex);
             throw new ClientIntegrationException(errorMessage, ex);
         }
