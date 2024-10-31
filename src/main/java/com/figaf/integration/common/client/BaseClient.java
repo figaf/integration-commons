@@ -1149,7 +1149,9 @@ public class BaseClient {
     private <RESULT> String getResponseBodyString(ResponseEntity<RESULT> responseEntity) {
         RESULT responseBody = responseEntity.getBody();
         String responseBodyString;
-        if (responseBody instanceof String) {
+        if (responseBody == null) {
+            responseBodyString = "";
+        } else if (responseBody instanceof String) {
             responseBodyString = (String) responseBody;
         } else if (responseBody instanceof byte[]) {
             responseBodyString = new String((byte[]) responseBody);
