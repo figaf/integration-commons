@@ -1,5 +1,6 @@
 package com.figaf.integration.common.factory;
 
+import com.figaf.integration.common.entity.RequestContext;
 import com.figaf.integration.common.entity.RestTemplateWrapper;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -31,6 +32,17 @@ public class RestTemplateWrapperFactory {
 
     public RestTemplateWrapper createRestTemplateWrapperDisablingRedirect() {
         return createRestTemplateWrapper(true);
+    }
+
+
+    public RestTemplateWrapper createRestTemplateWrapper(RequestContext requestContext) {
+        HttpComponentsClientHttpRequestFactory httpComponentsClientHttpRequestFactory = httpClientsFactory.getHttpComponentsClientHttpRequestFactory(
+            requestContext
+        );
+        HttpClient httpClient = httpComponentsClientHttpRequestFactory.getHttpClient();
+        RestTemplate restTemplate = new RestTemplate(httpComponentsClientHttpRequestFactory);
+        restTemplate.getMessageConverters().add(0, new StringHttpMessageConverter(StandardCharsets.UTF_8));
+        return new RestTemplateWrapper(restTemplate, httpClient);
     }
 
     public RestTemplateWrapper createRestTemplateWrapper(boolean disableRedirect) {

@@ -1,5 +1,6 @@
 package com.figaf.integration.common.client;
 
+import com.figaf.integration.common.entity.RequestContext;
 import com.figaf.integration.common.entity.RestTemplateWrapper;
 import com.figaf.integration.common.factory.RestTemplateWrapperFactory;
 import com.figaf.integration.common.utils.HttpClientUtils;
@@ -25,17 +26,17 @@ public class RestTemplateWrapperHolder {
         this.restTemplateWrapperFactory = restTemplateWrapperFactory;
     }
 
-    public RestTemplateWrapper getOrCreateRestTemplateWrapperSingleton(String key) {
+    public RestTemplateWrapper getOrCreateRestTemplateWrapperSingleton(RequestContext requestContext) {
         RestTemplateWrapper restTemplateWrapper = keyToRestTemplateWrapperMap.computeIfAbsent(
-            key,
-            k -> restTemplateWrapperFactory.createRestTemplateWrapper()
+            requestContext.getRestTemplateWrapperKey(),
+            k -> restTemplateWrapperFactory.createRestTemplateWrapper(requestContext)
         );
         return restTemplateWrapper;
     }
 
-    public RestTemplateWrapper createNewRestTemplateWrapper(String key) {
-        RestTemplateWrapper restTemplateWrapper = restTemplateWrapperFactory.createRestTemplateWrapper();
-        keyToRestTemplateWrapperMap.put(key, restTemplateWrapper);
+    public RestTemplateWrapper createNewRestTemplateWrapper(RequestContext requestContext) {
+        RestTemplateWrapper restTemplateWrapper = restTemplateWrapperFactory.createRestTemplateWrapper(requestContext);
+        keyToRestTemplateWrapperMap.put(requestContext.getRestTemplateWrapperKey(), restTemplateWrapper);
         return restTemplateWrapper;
     }
 

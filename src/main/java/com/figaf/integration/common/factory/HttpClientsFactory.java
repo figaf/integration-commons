@@ -2,11 +2,12 @@ package com.figaf.integration.common.factory;
 
 import com.figaf.integration.common.client.support.RestrictedRedirectStrategy;
 import com.figaf.integration.common.client.support.SapAirKeyHeaderInterceptor;
+import com.figaf.integration.common.entity.RequestContext;
 import com.github.markusbernhardt.proxy.ProxySearch;
-import com.sap.cloud.security.xsuaa.tokenflows.XsuaaTokenFlows;
 import lombok.Getter;
 import lombok.ToString;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.apache.hc.client5.http.classic.HttpClient;
 import org.apache.hc.client5.http.config.ConnectionConfig;
 import org.apache.hc.client5.http.config.RequestConfig;
@@ -25,6 +26,7 @@ import org.apache.hc.core5.http.io.SocketConfig;
 import org.apache.hc.core5.http.ssl.TLS;
 import org.apache.hc.core5.pool.PoolConcurrencyPolicy;
 import org.apache.hc.core5.pool.PoolReusePolicy;
+import org.apache.hc.core5.ssl.SSLContextBuilder;
 import org.apache.hc.core5.ssl.SSLContexts;
 import org.apache.hc.core5.util.TimeValue;
 import org.apache.hc.core5.util.Timeout;
@@ -33,8 +35,13 @@ import org.springframework.http.client.support.BasicAuthenticationInterceptor;
 import org.springframework.http.converter.StringHttpMessageConverter;
 import org.springframework.web.client.RestTemplate;
 
+import javax.net.ssl.SSLContext;
+import java.io.ByteArrayInputStream;
 import java.net.ProxySelector;
 import java.nio.charset.StandardCharsets;
+import java.security.KeyStore;
+
+import static java.lang.String.format;
 
 /**
  * @author Arsenii Istlentev
@@ -233,7 +240,7 @@ public class HttpClientsFactory {
             .setSSLSocketFactory(sslConnectionSocketFactory)
             .setDefaultTlsConfig(TlsConfig.custom()
                 .setHandshakeTimeout(Timeout.ofSeconds(30))
-                .setSupportedProtocols(TLS.V_1_3)
+                .setSupportedProtocols(TLS.V_1_2, TLS.V_1_3) // At that point of code, we didn't have a problem when we had only TLS 1.3 but some SAP services may require TLS 1.2
                 .build())
             .setDefaultSocketConfig(SocketConfig.custom()
                 .setSoTimeout(Timeout.ofMilliseconds(socketTimeout))
@@ -282,7 +289,7 @@ public class HttpClientsFactory {
         if (initDefaultSslConnectionSocketFactory) {
             defaultFactory = SSLConnectionSocketFactoryBuilder.create()
                 .setSslContext(SSLContexts.createSystemDefault())
-                .setTlsVersions(TLS.V_1_3)
+                .setTlsVersions(TLS.V_1_2, TLS.V_1_3) // At that point of code, we didn't have a problem when we had only TLS 1.3 but some SAP services may require TLS 1.2
                 .build();
         }
         return getHttpClientBuilder(
@@ -291,6 +298,29 @@ public class HttpClientsFactory {
             0,
             disableRedirect
         ).build();
+    }
+
+    public HttpClient createHttpClient(byte[] certificate, String certificatePassword) {
+        try {
+            KeyStore keyStore = KeyStore.getInstance("PKCS12");
+            try (ByteArrayInputStream keyStoreInput = new ByteArrayInputStream(certificate)) {
+                keyStore.load(keyStoreInput, certificatePassword.toCharArray());
+            }
+
+            SSLContext sslContext = SSLContextBuilder.create()
+                .loadKeyMaterial(keyStore, certificatePassword.toCharArray())
+                .build();
+
+            SSLConnectionSocketFactory sslConnectionSocketFactory = SSLConnectionSocketFactoryBuilder.create()
+                .setSslContext(sslContext)
+                .setTlsVersions(TLS.V_1_2, TLS.V_1_3) //SAP Passport authentication works only with TLS 1.2
+                .build();
+
+            return getHttpClientBuilder(sslConnectionSocketFactory).build();
+        } catch (Exception ex) {
+            log.error("Can't create httpClient with SAP Passport certificate: ", ex);
+            throw new RuntimeException(format("Can't create httpClient with SAP Passport certificate: %s", ExceptionUtils.getMessage(ex)));
+        }
     }
 
     public HttpClient createHttpClient(SSLConnectionSocketFactory sslConnectionSocketFactory) {
@@ -321,6 +351,18 @@ public class HttpClientsFactory {
         return new HttpComponentsClientHttpRequestFactory(
             createHttpClient(disableRedirect, initDefaultSslConnectionSocketFactory)
         );
+    }
+
+    public HttpComponentsClientHttpRequestFactory getHttpComponentsClientHttpRequestFactory(RequestContext requestContext) {
+        if (requestContext.isUseSapPassport()) {
+            return new HttpComponentsClientHttpRequestFactory(
+                createHttpClient(requestContext.getCertificate(), requestContext.getCertificatePassword())
+            );
+        } else {
+            return new HttpComponentsClientHttpRequestFactory(
+                createHttpClient()
+            );
+        }
     }
 
     public RestTemplate createRestTemplate(BasicAuthenticationInterceptor basicAuthenticationInterceptor) {

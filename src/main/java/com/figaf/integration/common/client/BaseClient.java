@@ -27,6 +27,7 @@ import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.RestTemplate;
 
 import java.net.*;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -254,10 +255,10 @@ public class BaseClient {
     ) {
         try {
             if (CloudPlatformType.CLOUD_FOUNDRY.equals(requestContext.getCloudPlatformType())) {
-                RestTemplateWrapper restTemplateWrapper = restTemplateWrapperHolder.getOrCreateRestTemplateWrapperSingleton(requestContext.getRestTemplateWrapperKey());
+                RestTemplateWrapper restTemplateWrapper = restTemplateWrapperHolder.getOrCreateRestTemplateWrapperSingleton(requestContext);
                 String token = retrieveToken(requestContext, restTemplateWrapper.getRestTemplate(), pathForToken);
                 String url = buildUrl(requestContext, pathForMainRequest);
-                return responseHandlerCallback.apply(url, token, restTemplateWrapperHolder.getOrCreateRestTemplateWrapperSingleton(requestContext.getRestTemplateWrapperKey()));
+                return responseHandlerCallback.apply(url, token, restTemplateWrapperHolder.getOrCreateRestTemplateWrapperSingleton(requestContext));
             } else {
                 ConnectionProperties connectionProperties = requestContext.getConnectionProperties();
                 RestTemplateWrapper restTemplateWrapper = restTemplateWrapperFactory.createRestTemplateWrapper(singleton(
@@ -575,7 +576,7 @@ public class BaseClient {
         ConnectionProperties connectionProperties = requestContext.getConnectionProperties();
         RestTemplateWrapper restTemplateWrapper;
         if (CloudPlatformType.CLOUD_FOUNDRY.equals(requestContext.getCloudPlatformType())) {
-            restTemplateWrapper = restTemplateWrapperHolder.getOrCreateRestTemplateWrapperSingleton(requestContext.getRestTemplateWrapperKey());
+            restTemplateWrapper = restTemplateWrapperHolder.getOrCreateRestTemplateWrapperSingleton(requestContext);
         } else {
             restTemplateWrapper = restTemplateWrapperFactory.createRestTemplateWrapper(singleton(
                 new BasicAuthenticationInterceptor(connectionProperties.getUsername(), connectionProperties.getPassword())
@@ -599,7 +600,7 @@ public class BaseClient {
             } else {
                 requestEntity = new RequestEntity(httpHeaders, HttpMethod.GET, new URI(url));
             }
-            RestTemplateWrapper restTemplateWrapper = restTemplateWrapperHolder.getOrCreateRestTemplateWrapperSingleton(requestContext.getRestTemplateWrapperKey());
+            RestTemplateWrapper restTemplateWrapper = restTemplateWrapperHolder.getOrCreateRestTemplateWrapperSingleton(requestContext);
             ResponseEntity<RESULT> responseEntity = restTemplateWrapper.getRestTemplate().exchange(requestEntity, bodyType);
             return responseEntity;
         } catch (ClientIntegrationException ex) {
@@ -784,7 +785,6 @@ public class BaseClient {
         log.debug("processing authentication");
         String signature = retrieveSignature(responseBodyString);
 
-        String restTemplateWrapperKey = requestContext.getRestTemplateWrapperKey();
         String redirectUrlReceivedAfterSuccessfulAuthorization;
 
         if (requestContext.isUseCustomIdp()) {
@@ -796,8 +796,8 @@ public class BaseClient {
             redirectUrlReceivedAfterSuccessfulAuthorization = authorizationUrl;
         } else if (StringUtils.isNotEmpty(requestContext.getLoginPageUrl())) {
             //if we have loginPageUrl, the next call (getAuthorizationPageContent) is needed only for receiving cookies
-            getAuthorizationPageContent(restTemplateWrapperKey, authorizationUrl);
-            ResponseEntity<String> loginPageContentResponseEntity = getLoginPageContent(restTemplateWrapperKey, requestContext.getLoginPageUrl());
+            getAuthorizationPageContent(requestContext, authorizationUrl);
+            ResponseEntity<String> loginPageContentResponseEntity = getLoginPageContent(requestContext, requestContext.getLoginPageUrl());
             List<String> cookies = loginPageContentResponseEntity.getHeaders().get(HttpHeaders.SET_COOKIE);
             MultiValueMap<String, String> loginFormData = buildLoginFormDataForSso(requestContext, loginPageContentResponseEntity.getBody());
             redirectUrlReceivedAfterSuccessfulAuthorization = authorizeAndGetLocationHeader(
@@ -809,7 +809,6 @@ public class BaseClient {
 
             ResponseEntity<RESULT> responseEntity = executeRedirectRequestAfterSuccessfulAuthorization(
                 requestContext,
-                restTemplateWrapperKey,
                 redirectUrlReceivedAfterSuccessfulAuthorization,
                 path,
                 signature,
@@ -824,12 +823,12 @@ public class BaseClient {
                 return responseEntity;
             }
             redirectUrlReceivedAfterSuccessfulAuthorization = authorizeViaSamlAndGetLocationHeader(
-                restTemplateWrapperKey,
+                requestContext,
                 responseBodyAsString,
                 samlRedirectUrl
             );
         } else {
-            String authorizationPageContent = getAuthorizationPageContent(restTemplateWrapperKey, authorizationUrl);
+            String authorizationPageContent = getAuthorizationPageContent(requestContext, authorizationUrl);
             String loginPageUrl = getLoginPageUrlFromAuthorizationPage(authorizationPageContent);
             if (loginPageUrl != null) {
                 try {
@@ -839,14 +838,19 @@ public class BaseClient {
                     loginPageUrl = buildDefaultLoginPageUrl(authorizationUrl);
                     log.info("built login page url: {}", loginPageUrl);
                 }
-                ResponseEntity<String> loginPageContentResponseEntity = getLoginPageContent(restTemplateWrapperKey, loginPageUrl);
-                MultiValueMap<String, String> loginFormData = buildLoginFormDataForSso(requestContext, loginPageContentResponseEntity.getBody());
-                redirectUrlReceivedAfterSuccessfulAuthorization = authorizeAndGetLocationHeader(
-                    requestContext,
-                    loginFormData,
-                    requestContext.getSsoUrl(),
-                    null
-                );
+
+                if (requestContext.isUseSapPassport()) {
+                    return this.executeRedirectRequestAfterSuccessfulAuthorization(requestContext, loginPageUrl, path, signature, additionalHeaders, responseType);
+                } else {
+                    ResponseEntity<String> loginPageContentResponseEntity = getLoginPageContent(requestContext, loginPageUrl);
+                    MultiValueMap<String, String> loginFormData = buildLoginFormDataForSso(requestContext, loginPageContentResponseEntity.getBody());
+                    redirectUrlReceivedAfterSuccessfulAuthorization = authorizeAndGetLocationHeader(
+                        requestContext,
+                        loginFormData,
+                        requestContext.getSsoUrl(),
+                        null
+                    );
+                }
             } else {
                 Matcher matcher = PWD_FORM_PATTERN.matcher(authorizationPageContent);
                 String loginDoPath;
@@ -871,7 +875,6 @@ public class BaseClient {
 
         return executeRedirectRequestAfterSuccessfulAuthorization(
             requestContext,
-            restTemplateWrapperKey,
             redirectUrlReceivedAfterSuccessfulAuthorization,
             path,
             signature,
@@ -881,7 +884,7 @@ public class BaseClient {
     }
 
     private void authorizeViaCustomIdpProvider(RequestContext requestContext, String authorizationUrl) throws URISyntaxException {
-        RestTemplateWrapper restTemplateWrapper = restTemplateWrapperHolder.getOrCreateRestTemplateWrapperSingleton(requestContext.getRestTemplateWrapperKey());
+        RestTemplateWrapper restTemplateWrapper = restTemplateWrapperHolder.getOrCreateRestTemplateWrapperSingleton(requestContext);
 
         String authorizationBaseUrl = getBaseUrl(authorizationUrl);
 
@@ -1002,19 +1005,19 @@ public class BaseClient {
         return loginPageUrl;
     }
 
-    private String getAuthorizationPageContent(String restTemplateWrapperKey, String url) throws URISyntaxException {
-        log.debug("#getAuthorizationPageContent(String restTemplateWrapperKey, String url): {}, {}", restTemplateWrapperKey, url);
+    private String getAuthorizationPageContent(RequestContext requestContext, String url) throws URISyntaxException {
+        log.debug("#getAuthorizationPageContent: restTemplateWrapperKey = {}, url = {}", requestContext.getRestTemplateWrapperKey(), url);
         HttpHeaders httpHeaders = new HttpHeaders();
         httpHeaders.add("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9");
         RequestEntity requestEntity = new RequestEntity(httpHeaders, HttpMethod.GET, new URI(url));
 
-        RestTemplateWrapper restTemplateWrapper = restTemplateWrapperHolder.getOrCreateRestTemplateWrapperSingleton(restTemplateWrapperKey);
+        RestTemplateWrapper restTemplateWrapper = restTemplateWrapperHolder.getOrCreateRestTemplateWrapperSingleton(requestContext);
         ResponseEntity<String> responseEntity;
         try {
             responseEntity = restTemplateWrapper.getRestTemplate().exchange(requestEntity, String.class);
         } catch (HttpStatusCodeException ex) {
             if (HttpStatus.BAD_REQUEST.equals(ex.getStatusCode())) {
-                restTemplateWrapper = restTemplateWrapperHolder.createNewRestTemplateWrapper(restTemplateWrapperKey);
+                restTemplateWrapper = restTemplateWrapperHolder.createNewRestTemplateWrapper(requestContext);
                 responseEntity = restTemplateWrapper.getRestTemplate().exchange(requestEntity, String.class);
             } else {
                 throw ex;
@@ -1030,12 +1033,12 @@ public class BaseClient {
         return loginPageUrl != null ? loginPageUrl.replaceAll("amp;", "") : null;
     }
 
-    private ResponseEntity<String> getLoginPageContent(String restTemplateWrapperKey, String url) throws Exception {
-        log.debug("#getLoginPageContent(String restTemplateWrapperKey, String url): {}, {}", restTemplateWrapperKey, url);
+    private ResponseEntity<String> getLoginPageContent(RequestContext requestContext, String url) throws Exception {
+        log.debug("#getLoginPageContent: restTemplateWrapperKey = {}, url = {}", requestContext.getRestTemplateWrapperKey(), url);
         HttpHeaders httpHeaders = new HttpHeaders();
         httpHeaders.add("Accept", "*/*");
         RequestEntity requestEntity = new RequestEntity(httpHeaders, HttpMethod.GET, new URI(url));
-        RestTemplateWrapper restTemplateWrapper = restTemplateWrapperHolder.getOrCreateRestTemplateWrapperSingleton(restTemplateWrapperKey);
+        RestTemplateWrapper restTemplateWrapper = restTemplateWrapperHolder.getOrCreateRestTemplateWrapperSingleton(requestContext);
         ResponseEntity<String> exchange = restTemplateWrapper.getRestTemplate().exchange(requestEntity, String.class);
         return exchange;
     }
@@ -1063,7 +1066,7 @@ public class BaseClient {
         return location;
     }
 
-    private String authorizeViaSamlAndGetLocationHeader(String restTemplateWrapperKey, String responseBodyAsString, String samlRedirectUrl) {
+    private String authorizeViaSamlAndGetLocationHeader(RequestContext requestContext, String responseBodyAsString, String samlRedirectUrl) {
         String redirectUrlReceivedAfterSuccessfulAuthorization;
         String samlResponse = getFirstMatchedGroup(responseBodyAsString, SAML_RESPONSE_PATTERN, null);
         String authenticityToken = getFirstMatchedGroup(responseBodyAsString, AUTHENTICITY_TOKEN_PATTERN, null);
@@ -1073,7 +1076,7 @@ public class BaseClient {
         body.add("SAMLResponse", samlResponse);
         HttpHeaders httpHeaders = new HttpHeaders();
         HttpEntity<MultiValueMap<String, String>> request = new HttpEntity<>(body, httpHeaders);
-        RestTemplateWrapper restTemplateWrapper = restTemplateWrapperHolder.getOrCreateRestTemplateWrapperSingleton(restTemplateWrapperKey);
+        RestTemplateWrapper restTemplateWrapper = restTemplateWrapperHolder.getOrCreateRestTemplateWrapperSingleton(requestContext);
         ResponseEntity<String> responseEntity = restTemplateWrapper.getRestTemplate().postForEntity(samlRedirectUrl, request, String.class);
         redirectUrlReceivedAfterSuccessfulAuthorization = responseEntity.getHeaders().getFirst("location");
         return redirectUrlReceivedAfterSuccessfulAuthorization;
@@ -1094,7 +1097,7 @@ public class BaseClient {
                 httpHeaders.add("Cookie", StringUtils.join(cookies, "; "));
             }
             HttpEntity<MultiValueMap<String, String>> request = new HttpEntity<>(map, httpHeaders);
-            RestTemplateWrapper restTemplateWrapper = restTemplateWrapperHolder.getOrCreateRestTemplateWrapperSingleton(requestContext.getRestTemplateWrapperKey());
+            RestTemplateWrapper restTemplateWrapper = restTemplateWrapperHolder.getOrCreateRestTemplateWrapperSingleton(requestContext);
             ResponseEntity<String> response = restTemplateWrapper.getRestTemplate().postForEntity(loginUrl, request, String.class);
             if (StringUtils.contains(response.getBody(), "Sorry, we could not authenticate you")) {
                 throw new ClientIntegrationException("Login/password are not correct");
@@ -1108,18 +1111,17 @@ public class BaseClient {
 
     private <RESP> ResponseEntity<RESP> executeRedirectRequestAfterSuccessfulAuthorization(
         RequestContext requestContext,
-        String restTemplateWrapperKey,
         String url,
         String initialPath,
         String signature,
         HttpHeaders additionalHeaders,
         Class<RESP> responseType
     ) throws Exception {
-        log.debug("#executeRedirectRequestAfterSuccessfulAuthorization(RequestContext requestContext, String restTemplateWrapperKey, String url, String initialPath, String signature, HttpHeaders additionalHeaders, Class<T> responseType): {}, {}, {}, {}, {}, {}, {}",
-            requestContext, restTemplateWrapperKey, url, initialPath, signature, additionalHeaders, responseType
+        log.debug("#executeRedirectRequestAfterSuccessfulAuthorization(RequestContext requestContext, String url, String initialPath, String signature, HttpHeaders additionalHeaders, Class<T> responseType): {}, {}, {}, {}, {}, {}",
+            requestContext, url, initialPath, signature, additionalHeaders, responseType
         );
 
-        String cookie = String.format("fragmentAfterLogin=; locationAfterLogin=%s; signature=%s", URLEncoder.encode(initialPath, "UTF-8"), signature);
+        String cookie = String.format("fragmentAfterLogin=; locationAfterLogin=%s; signature=%s", URLEncoder.encode(initialPath, StandardCharsets.UTF_8), signature);
         HttpHeaders headers = new HttpHeaders();
         headers.add("Cookie", cookie);
         if (additionalHeaders != null) {
@@ -1127,7 +1129,7 @@ public class BaseClient {
         }
 
         RequestEntity requestEntity = new RequestEntity(headers, HttpMethod.GET, new URI(url));
-        RestTemplateWrapper restTemplateWrapper = restTemplateWrapperHolder.getOrCreateRestTemplateWrapperSingleton(restTemplateWrapperKey);
+        RestTemplateWrapper restTemplateWrapper = restTemplateWrapperHolder.getOrCreateRestTemplateWrapperSingleton(requestContext);
 
         ResponseEntity<RESP> responseEntity;
         try {
