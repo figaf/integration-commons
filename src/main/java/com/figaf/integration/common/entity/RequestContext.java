@@ -18,7 +18,7 @@ public class RequestContext {
     private String restTemplateWrapperKey;
     private String loginPageUrl;
     private String ssoUrl;
-    private boolean useCustomIdp;
+    private WebApiAccessMode webApiAccessMode;
     private String samlUrl;
     private String figafAgentId;
     private String idpName;
@@ -30,6 +30,9 @@ public class RequestContext {
     private String clientSecret;
     private AuthenticationType authenticationType;
     private String runtimeLocationId;
+
+    private byte[] certificate;
+    private String certificatePassword;
 
     public RequestContext(
         ConnectionProperties connectionProperties,
@@ -103,4 +106,13 @@ public class RequestContext {
         }
         return restTemplateWrapperKey;
     }
+
+    public boolean isUseCustomIdp() {
+        return webApiAccessMode == WebApiAccessMode.CUSTOM_IDP;
+    }
+
+    public boolean isUseSapPassport() {
+        return webApiAccessMode == WebApiAccessMode.SAP_PASSPORT;
+    }
+
 }
