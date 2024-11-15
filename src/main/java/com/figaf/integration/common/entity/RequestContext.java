@@ -9,7 +9,9 @@ import lombok.*;
 @AllArgsConstructor
 @Getter
 @Setter
-@ToString(exclude = {"idpApiClientSecret", "clientSecret", "samlResponseSigner"})
+@ToString(of = {"connectionProperties", "cloudPlatformType", "platform", "restTemplateWrapperKey", "loginPageUrl", "ssoUrl", "webApiAccessMode", "samlUrl", "figafAgentId",
+    "idpName", "idpApiClientId", "oauthUrl", "clientId", "authenticationType", "runtimeLocationId"
+})
 public class RequestContext {
 
     private ConnectionProperties connectionProperties;
