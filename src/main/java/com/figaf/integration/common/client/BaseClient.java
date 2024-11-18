@@ -606,7 +606,7 @@ public class BaseClient {
         } catch (ClientIntegrationException ex) {
             throw ex;
         } catch (HttpClientErrorException.NotFound ex) {
-            throw new ClientIntegrationException(format("Can't execute GET %s successfully: %s", url, ex.getMessage()));
+            throw new ClientIntegrationException(format("Can't execute GET %s successfully: %s", url, ex.getMessage()), ex);
         } catch (Exception ex) {
             String errorMessage = format("Can't execute GET %s successfully: %s",
                 url, Utils.extractMessageAndRootCauseMessage(ex, false)
