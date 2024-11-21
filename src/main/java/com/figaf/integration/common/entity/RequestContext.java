@@ -1,6 +1,7 @@
 package com.figaf.integration.common.entity;
 
 import lombok.*;
+import org.apache.commons.lang3.StringUtils;
 
 /**
  * @author Arsenii Istlentev
@@ -107,6 +108,10 @@ public class RequestContext {
             restTemplateWrapperKey = "";
         }
         return restTemplateWrapperKey;
+    }
+
+    public String getRuntimeLocationId() {
+        return StringUtils.defaultIfBlank(runtimeLocationId, "");
     }
 
     public boolean isUseCustomIdp() {
