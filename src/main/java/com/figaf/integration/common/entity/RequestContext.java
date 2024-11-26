@@ -11,7 +11,7 @@ import org.apache.commons.lang3.StringUtils;
 @Getter
 @Setter
 @ToString(of = {"connectionProperties", "cloudPlatformType", "platform", "restTemplateWrapperKey", "loginPageUrl", "ssoUrl", "webApiAccessMode", "samlUrl", "figafAgentId",
-    "idpName", "idpApiClientId", "oauthUrl", "clientId", "authenticationType", "runtimeLocationId"
+    "idpName", "idpApiClientId", "oauthUrl", "clientId", "authenticationType", "defaultRuntimeLocationId", "runtimeLocationId"
 })
 public class RequestContext {
 
@@ -32,6 +32,7 @@ public class RequestContext {
     private String clientId;
     private String clientSecret;
     private AuthenticationType authenticationType;
+    private String defaultRuntimeLocationId;
     private String runtimeLocationId;
 
     private byte[] certificate;
@@ -108,10 +109,6 @@ public class RequestContext {
             restTemplateWrapperKey = "";
         }
         return restTemplateWrapperKey;
-    }
-
-    public String getRuntimeLocationId() {
-        return StringUtils.defaultIfBlank(runtimeLocationId, "");
     }
 
     public boolean isUseCustomIdp() {
