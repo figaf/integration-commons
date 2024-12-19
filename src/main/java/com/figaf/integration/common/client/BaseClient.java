@@ -794,10 +794,22 @@ public class BaseClient {
             }
             authorizeViaCustomIdpProvider(requestContext, authorizationUrl);
             redirectUrlReceivedAfterSuccessfulAuthorization = authorizationUrl;
-        } else if (StringUtils.isNotEmpty(requestContext.getLoginPageUrl())) {
+        } else if (StringUtils.isNotEmpty(requestContext.getLoginPageUrl()) || requestContext.isSapIdentityService()) {
             //if we have loginPageUrl, the next call (getAuthorizationPageContent) is needed only for receiving cookies
             getAuthorizationPageContent(requestContext, authorizationUrl);
-            ResponseEntity<String> loginPageContentResponseEntity = getLoginPageContent(requestContext, requestContext.getLoginPageUrl());
+            ResponseEntity<String> loginPageContentResponseEntity;
+            if (requestContext.isSapIdentityService()) {
+                String authorizationBaseUrl = getBaseUrl(authorizationUrl);
+                String loginPageUrl = calculateLoginPageUrlForSaml(requestContext, authorizationBaseUrl);
+                loginPageContentResponseEntity = getLoginPageContent(requestContext, loginPageUrl);
+                String loginPageContent = loginPageContentResponseEntity.getBody();
+                //this condition means that we need to do an additional POST request to receive a standard logon form
+                if (loginPageContent != null && !loginPageContent.contains("logOnForm") && loginPageContent.contains("form") && loginPageContent.contains("SAMLRequest")) {
+                    loginPageContentResponseEntity = getLoginPageForSapIdentityService(requestContext, loginPageContent);
+                }
+            } else {
+                loginPageContentResponseEntity = getLoginPageContent(requestContext, requestContext.getLoginPageUrl());
+            }
             List<String> cookies = loginPageContentResponseEntity.getHeaders().get(HttpHeaders.SET_COOKIE);
             MultiValueMap<String, String> loginFormData = buildLoginFormDataForSso(requestContext, loginPageContentResponseEntity.getBody());
             redirectUrlReceivedAfterSuccessfulAuthorization = authorizeAndGetLocationHeader(
@@ -1041,6 +1053,30 @@ public class BaseClient {
         RestTemplateWrapper restTemplateWrapper = restTemplateWrapperHolder.getOrCreateRestTemplateWrapperSingleton(requestContext);
         ResponseEntity<String> exchange = restTemplateWrapper.getRestTemplate().exchange(requestEntity, String.class);
         return exchange;
+    }
+
+    private ResponseEntity<String> getLoginPageForSapIdentityService(RequestContext requestContext, String body) {
+        HttpHeaders httpHeaders = new HttpHeaders();
+        httpHeaders.add("Accept", "*/*");
+
+        Document doc = Jsoup.parse(body);
+
+        Element logOnForm = doc.getElementsByTag("form").first();
+        Elements inputElements = logOnForm.getElementsByTag("input");
+
+        MultiValueMap<String, String> map = new LinkedMultiValueMap<>();
+        for (Element inputElement : inputElements) {
+            String name = inputElement.attr("name");
+            if (StringUtils.isEmpty(name)) {
+                continue;
+            }
+
+            map.put(name, Collections.singletonList(inputElement.attr("value")));
+        }
+
+        RestTemplateWrapper restTemplateWrapper = restTemplateWrapperHolder.getOrCreateRestTemplateWrapperSingleton(requestContext);
+        HttpEntity<MultiValueMap<String, String>> request = new HttpEntity<>(map, httpHeaders);
+        return restTemplateWrapper.getRestTemplate().postForEntity(requestContext.getSsoUrl(), request, String.class);
     }
 
     private String authorizeAndGetLocationHeader(
