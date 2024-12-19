@@ -119,4 +119,8 @@ public class RequestContext {
         return webApiAccessMode == WebApiAccessMode.SAP_PASSPORT;
     }
 
+    public boolean isSapIdentityService() {
+        return webApiAccessMode == WebApiAccessMode.SAP_IDENTITY_SERVICE;
+    }
+
 }
