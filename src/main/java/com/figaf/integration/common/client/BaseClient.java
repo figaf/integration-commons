@@ -56,6 +56,7 @@ public class BaseClient {
     private static final Pattern SAML_RESPONSE_PATTERN = Pattern.compile("id=\"SAMLResponse\" value=\"([^\"]*)\"");
     private static final Pattern AUTHENTICITY_TOKEN_PATTERN = Pattern.compile("name=\"authenticity_token\".*value=\"([^\"]*)\"");
     private static final Pattern DEFAULT_IDENTITY_PROVIDER_PATTERN = Pattern.compile("<a href=\"(https://accounts\\.sap\\.com/[^\"]*)\"");
+    private static final Pattern SAP_CUSTOM_IDENTITY_PROVIDER_PATTERN = Pattern.compile("<a href=\"(https[^\"]*sap\\.custom[^\"]*)\"");
 
     private static final String DEFAULT_SSO_URL = "https://accounts.sap.com/saml2/idp/sso";
 
@@ -800,10 +801,11 @@ public class BaseClient {
             ResponseEntity<String> loginPageContentResponseEntity = getLoginPageContent(requestContext, requestContext.getLoginPageUrl());
             List<String> cookies = loginPageContentResponseEntity.getHeaders().get(HttpHeaders.SET_COOKIE);
             MultiValueMap<String, String> loginFormData = buildLoginFormDataForSso(requestContext, loginPageContentResponseEntity.getBody());
+            String ssoUrl = resolveSsoUrl(requestContext, loginFormData);
             redirectUrlReceivedAfterSuccessfulAuthorization = authorizeAndGetLocationHeader(
                 requestContext,
                 loginFormData,
-                requestContext.getSsoUrl(),
+                ssoUrl,
                 cookies
             );
 
@@ -829,7 +831,7 @@ public class BaseClient {
             );
         } else {
             String authorizationPageContent = getAuthorizationPageContent(requestContext, authorizationUrl);
-            String loginPageUrl = getLoginPageUrlFromAuthorizationPage(authorizationPageContent);
+            String loginPageUrl = getLoginPageUrlFromAuthorizationPage(authorizationPageContent, requestContext.isSapIdentityService());
             if (loginPageUrl != null) {
                 try {
                     new URL(loginPageUrl);
@@ -844,10 +846,11 @@ public class BaseClient {
                 } else {
                     ResponseEntity<String> loginPageContentResponseEntity = getLoginPageContent(requestContext, loginPageUrl);
                     MultiValueMap<String, String> loginFormData = buildLoginFormDataForSso(requestContext, loginPageContentResponseEntity.getBody());
+                    String ssoUrl = resolveSsoUrl(requestContext, loginFormData);
                     redirectUrlReceivedAfterSuccessfulAuthorization = authorizeAndGetLocationHeader(
                         requestContext,
                         loginFormData,
-                        requestContext.getSsoUrl(),
+                        ssoUrl,
                         null
                     );
                 }
@@ -1027,9 +1030,9 @@ public class BaseClient {
         return responseEntity.getBody();
     }
 
-    private String getLoginPageUrlFromAuthorizationPage(String authorizationPageContent) {
-        log.debug("#getLoginPageUrlFromAuthorizationPage(String authorizationPageContent)");
-        String loginPageUrl = retrieveLoginPageUrl(authorizationPageContent);
+    private String getLoginPageUrlFromAuthorizationPage(String authorizationPageContent, boolean sapIdentityService) {
+        log.debug("#getLoginPageUrlFromAuthorizationPage: sapIdentityService = {}", sapIdentityService);
+        String loginPageUrl = retrieveLoginPageUrl(authorizationPageContent, sapIdentityService);
         return loginPageUrl != null ? loginPageUrl.replaceAll("amp;", "") : null;
     }
 
@@ -1041,6 +1044,36 @@ public class BaseClient {
         RestTemplateWrapper restTemplateWrapper = restTemplateWrapperHolder.getOrCreateRestTemplateWrapperSingleton(requestContext);
         ResponseEntity<String> exchange = restTemplateWrapper.getRestTemplate().exchange(requestEntity, String.class);
         return exchange;
+    }
+
+    private String resolveSsoUrl(RequestContext requestContext, MultiValueMap<String, String> loginFormData) {
+        String ssoUrl = StringUtils.isNotEmpty(requestContext.getSsoUrl()) ? requestContext.getSsoUrl() : loginFormData.getFirst("idpSSOEndpoint");
+        return ssoUrl;
+    }
+
+    //SAML via SAP Identity Service - not used
+    private ResponseEntity<String> getLoginPageForSapIdentityService(RequestContext requestContext, String body) {
+        HttpHeaders httpHeaders = new HttpHeaders();
+        httpHeaders.add("Accept", "*/*");
+
+        Document doc = Jsoup.parse(body);
+
+        Element logOnForm = doc.getElementsByTag("form").first();
+        Elements inputElements = logOnForm.getElementsByTag("input");
+
+        MultiValueMap<String, String> map = new LinkedMultiValueMap<>();
+        for (Element inputElement : inputElements) {
+            String name = inputElement.attr("name");
+            if (StringUtils.isEmpty(name)) {
+                continue;
+            }
+
+            map.put(name, Collections.singletonList(inputElement.attr("value")));
+        }
+
+        RestTemplateWrapper restTemplateWrapper = restTemplateWrapperHolder.getOrCreateRestTemplateWrapperSingleton(requestContext);
+        HttpEntity<MultiValueMap<String, String>> request = new HttpEntity<>(map, httpHeaders);
+        return restTemplateWrapper.getRestTemplate().postForEntity(requestContext.getSsoUrl(), request, String.class);
     }
 
     private String authorizeAndGetLocationHeader(
@@ -1057,6 +1090,7 @@ public class BaseClient {
         //IRT-2657: SAP has split authentication process into two steps
         if (location == null && responseEntity.getBody() != null) {
             loginFormData = buildLoginFormDataForSso(requestContext, responseEntity.getBody());
+            //in theory, we may need to call resolveSsoUrl(requestContext, loginFormData) here but at the moment we don't have such a case
             responseEntity = authorize(requestContext, loginFormData, loginUrl, cookies);
             location = responseEntity.getHeaders().getFirst("Location");
         }
@@ -1171,10 +1205,14 @@ public class BaseClient {
         return getFirstMatchedGroup(responseBodyString, SIGNATURE_PATTERN, "");
     }
 
-    private String retrieveLoginPageUrl(String responseBodyString) {
+    private String retrieveLoginPageUrl(String responseBodyString, boolean sapIdentityService) {
         String loginPageUrl = getFirstMatchedGroup(responseBodyString, LOGIN_URL_PATTERN, null);
         if (loginPageUrl == null) {
-            loginPageUrl = getFirstMatchedGroup(responseBodyString, DEFAULT_IDENTITY_PROVIDER_PATTERN, null);
+            loginPageUrl = getFirstMatchedGroup(
+                responseBodyString,
+                sapIdentityService ? SAP_CUSTOM_IDENTITY_PROVIDER_PATTERN : DEFAULT_IDENTITY_PROVIDER_PATTERN,
+                null
+            );
         }
         return loginPageUrl;
     }

@@ -4,5 +4,6 @@ public enum WebApiAccessMode {
 
     S_USER,
     CUSTOM_IDP,
-    SAP_PASSPORT
+    SAP_PASSPORT,
+    SAP_IDENTITY_SERVICE
 }
