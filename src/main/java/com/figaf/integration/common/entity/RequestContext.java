@@ -1,7 +1,6 @@
 package com.figaf.integration.common.entity;
 
 import lombok.*;
-import org.apache.commons.lang3.StringUtils;
 
 /**
  * @author Arsenii Istlentev
@@ -34,9 +33,10 @@ public class RequestContext {
     private AuthenticationType authenticationType;
     private String defaultRuntimeLocationId;
     private String runtimeLocationId;
-
     private byte[] certificate;
     private String certificatePassword;
+    private boolean onPremiseEdgeSystem;
+    private String edgeCloudConnectorLocationId;
 
     public RequestContext(
         ConnectionProperties connectionProperties,
