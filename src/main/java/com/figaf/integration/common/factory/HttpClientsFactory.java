@@ -222,19 +222,21 @@ public class HttpClientsFactory {
             null,
             0,
             0,
-            disableRedirect
+            disableRedirect,
+            false
         );
     }
 
     public HttpClientBuilder getHttpClientBuilder(SSLConnectionSocketFactory sslConnectionSocketFactory) {
-        return getHttpClientBuilder(sslConnectionSocketFactory, 0, 0, false);
+        return getHttpClientBuilder(sslConnectionSocketFactory, 0, 0, false, false);
     }
 
     public HttpClientBuilder getHttpClientBuilder(
         SSLConnectionSocketFactory sslConnectionSocketFactory,
         int maxConnPerRoute,
         int maxConnTotal,
-        boolean disableRedirect
+        boolean disableRedirect,
+        boolean accessTokenFlowForEdgeCloudConnector
     ) {
         PoolingHttpClientConnectionManager connectionManager = PoolingHttpClientConnectionManagerBuilder.create()
             .setSSLSocketFactory(sslConnectionSocketFactory)
@@ -264,12 +266,14 @@ public class HttpClientsFactory {
             .build();
         httpClientBuilder.setDefaultRequestConfig(requestConfig);
         httpClientBuilder.setRedirectStrategy(RestrictedRedirectStrategy.INSTANCE);
-        if (useProxyForConnections) {
+        if (useProxyForConnections && !accessTokenFlowForEdgeCloudConnector) {
             httpClientBuilder.setRoutePlanner(new SystemDefaultRoutePlanner(ProxySelector.getDefault()));
         }
         if (useForBtpToOnPremiseIntegration && CloudConnectorParameters.getInstance() != null) {
             httpClientBuilder.addRequestInterceptorFirst(oAuthHttpRequestInterceptor);
-            httpClientBuilder.setRoutePlanner(defaultProxyRoutePlanner);
+            if (!accessTokenFlowForEdgeCloudConnector) {
+                httpClientBuilder.setRoutePlanner(defaultProxyRoutePlanner);
+            }
         }
         if (disableRedirect) {
             httpClientBuilder.disableRedirectHandling();
@@ -280,11 +284,12 @@ public class HttpClientsFactory {
         return httpClientBuilder;
     }
 
+
     public HttpClient createHttpClient() {
-        return createHttpClient(false, false);
+        return createHttpClient(false, false, false);
     }
 
-    public HttpClient createHttpClient(boolean disableRedirect, boolean initDefaultSslConnectionSocketFactory) {
+    public HttpClient createHttpClient(boolean disableRedirect, boolean initDefaultSslConnectionSocketFactory, boolean accessTokenFlowForEdgeCloudConnector) {
         SSLConnectionSocketFactory defaultFactory = null;
         if (initDefaultSslConnectionSocketFactory) {
             defaultFactory = SSLConnectionSocketFactoryBuilder.create()
@@ -296,7 +301,8 @@ public class HttpClientsFactory {
             defaultFactory,
             0,
             0,
-            disableRedirect
+            disableRedirect,
+            accessTokenFlowForEdgeCloudConnector
         ).build();
     }
 
@@ -328,7 +334,7 @@ public class HttpClientsFactory {
     }
 
     public HttpClient createHttpClient(SSLConnectionSocketFactory sslConnectionSocketFactory, boolean disableRedirect) {
-        return getHttpClientBuilder(sslConnectionSocketFactory, 0, 0, disableRedirect).build();
+        return getHttpClientBuilder(sslConnectionSocketFactory, 0, 0, disableRedirect, false).build();
     }
 
     public HttpClient createHttpClient(
@@ -337,19 +343,20 @@ public class HttpClientsFactory {
         int maxConnTotal,
         boolean disableRedirect
     ) {
-        return getHttpClientBuilder(sslConnectionSocketFactory, maxConnPerRoute, maxConnTotal, disableRedirect).build();
+        return getHttpClientBuilder(sslConnectionSocketFactory, maxConnPerRoute, maxConnTotal, disableRedirect, false).build();
     }
 
-    public HttpComponentsClientHttpRequestFactory getHttpComponentsClientHttpRequestFactory() {
-        return getHttpComponentsClientHttpRequestFactory(false, false);
+    public HttpComponentsClientHttpRequestFactory getHttpComponentsClientHttpRequestFactory(boolean accessTokenFlowForEdgeCloudConnector) {
+        return getHttpComponentsClientHttpRequestFactory(false, false, accessTokenFlowForEdgeCloudConnector);
     }
 
     public HttpComponentsClientHttpRequestFactory getHttpComponentsClientHttpRequestFactory(
         boolean disableRedirect,
-        boolean initDefaultSslConnectionSocketFactory
+        boolean initDefaultSslConnectionSocketFactory,
+        boolean accessTokenFlowForEdgeCloudConnector
     ) {
         return new HttpComponentsClientHttpRequestFactory(
-            createHttpClient(disableRedirect, initDefaultSslConnectionSocketFactory)
+            createHttpClient(disableRedirect, initDefaultSslConnectionSocketFactory, accessTokenFlowForEdgeCloudConnector)
         );
     }
 
@@ -366,16 +373,21 @@ public class HttpClientsFactory {
     }
 
     public RestTemplate createRestTemplate(BasicAuthenticationInterceptor basicAuthenticationInterceptor) {
-        RestTemplate restTemplate = new RestTemplate(getHttpComponentsClientHttpRequestFactory());
+        RestTemplate restTemplate = new RestTemplate(getHttpComponentsClientHttpRequestFactory(false));
         restTemplate.getInterceptors().add(basicAuthenticationInterceptor);
         restTemplate.getMessageConverters().add(0, new StringHttpMessageConverter(StandardCharsets.UTF_8));
         return restTemplate;
     }
 
-    public RestTemplate createRestTemplate() {
-        RestTemplate restTemplate = new RestTemplate(getHttpComponentsClientHttpRequestFactory());
+    public RestTemplate createRestTemplate(boolean accessTokenFlowForEdgeCloudConnector) {
+        RestTemplate restTemplate = new RestTemplate(getHttpComponentsClientHttpRequestFactory(accessTokenFlowForEdgeCloudConnector));
         restTemplate.getMessageConverters().add(0, new StringHttpMessageConverter(StandardCharsets.UTF_8));
         return restTemplate;
     }
 
+    public RestTemplate createRestTemplate() {
+        RestTemplate restTemplate = new RestTemplate(getHttpComponentsClientHttpRequestFactory(false));
+        restTemplate.getMessageConverters().add(0, new StringHttpMessageConverter(StandardCharsets.UTF_8));
+        return restTemplate;
+    }
 }
