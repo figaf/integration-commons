@@ -51,7 +51,7 @@ public class OAuthTokenInterceptor implements ClientHttpRequestInterceptor {
     private OAuthAccessToken getToken() {
         ResponseEntity<String> responseEntity;
         try {
-            RestTemplate restTemplate = httpClientsFactory.createRestTemplate();
+            RestTemplate restTemplate = httpClientsFactory.createRestTemplate(httpClientsFactory.isUseForBtpToOnPremiseIntegration());
             String oauthRequestBody = EntityUtils.toString(new UrlEncodedFormEntity(asList(
                 new BasicNameValuePair("grant_type", "client_credentials"),
                 new BasicNameValuePair("scope", ""),
