@@ -58,7 +58,7 @@ public class RestTemplateWrapperFactory {
     }
 
     public RestTemplateWrapper createRestTemplateWrapper(Collection<ClientHttpRequestInterceptor> clientHttpRequestInterceptors) {
-        HttpComponentsClientHttpRequestFactory httpComponentsClientHttpRequestFactory = httpClientsFactory.getHttpComponentsClientHttpRequestFactory(false);
+        HttpComponentsClientHttpRequestFactory httpComponentsClientHttpRequestFactory = httpClientsFactory.getHttpComponentsClientHttpRequestFactory();
         HttpClient httpClient = httpComponentsClientHttpRequestFactory.getHttpClient();
         RestTemplate restTemplate = new RestTemplate(httpComponentsClientHttpRequestFactory);
         restTemplate.getInterceptors().addAll(clientHttpRequestInterceptors);

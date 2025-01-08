@@ -236,7 +236,7 @@ public class HttpClientsFactory {
         int maxConnPerRoute,
         int maxConnTotal,
         boolean disableRedirect,
-        boolean accessTokenFlowForEdgeCloudConnector
+        boolean omitCloudConnectorProxy
     ) {
         PoolingHttpClientConnectionManager connectionManager = PoolingHttpClientConnectionManagerBuilder.create()
             .setSSLSocketFactory(sslConnectionSocketFactory)
@@ -266,12 +266,12 @@ public class HttpClientsFactory {
             .build();
         httpClientBuilder.setDefaultRequestConfig(requestConfig);
         httpClientBuilder.setRedirectStrategy(RestrictedRedirectStrategy.INSTANCE);
-        if (useProxyForConnections && !accessTokenFlowForEdgeCloudConnector) {
+        if (useProxyForConnections) {
             httpClientBuilder.setRoutePlanner(new SystemDefaultRoutePlanner(ProxySelector.getDefault()));
         }
         if (useForBtpToOnPremiseIntegration && CloudConnectorParameters.getInstance() != null) {
             httpClientBuilder.addRequestInterceptorFirst(oAuthHttpRequestInterceptor);
-            if (!accessTokenFlowForEdgeCloudConnector) {
+            if (!omitCloudConnectorProxy) {
                 httpClientBuilder.setRoutePlanner(defaultProxyRoutePlanner);
             }
         }
@@ -289,7 +289,7 @@ public class HttpClientsFactory {
         return createHttpClient(false, false, false);
     }
 
-    public HttpClient createHttpClient(boolean disableRedirect, boolean initDefaultSslConnectionSocketFactory, boolean accessTokenFlowForEdgeCloudConnector) {
+    public HttpClient createHttpClient(boolean disableRedirect, boolean initDefaultSslConnectionSocketFactory, boolean omitCloudConnectorProxy) {
         SSLConnectionSocketFactory defaultFactory = null;
         if (initDefaultSslConnectionSocketFactory) {
             defaultFactory = SSLConnectionSocketFactoryBuilder.create()
@@ -302,7 +302,7 @@ public class HttpClientsFactory {
             0,
             0,
             disableRedirect,
-            accessTokenFlowForEdgeCloudConnector
+            omitCloudConnectorProxy
         ).build();
     }
 
@@ -346,17 +346,21 @@ public class HttpClientsFactory {
         return getHttpClientBuilder(sslConnectionSocketFactory, maxConnPerRoute, maxConnTotal, disableRedirect, false).build();
     }
 
-    public HttpComponentsClientHttpRequestFactory getHttpComponentsClientHttpRequestFactory(boolean accessTokenFlowForEdgeCloudConnector) {
-        return getHttpComponentsClientHttpRequestFactory(false, false, accessTokenFlowForEdgeCloudConnector);
+    public HttpComponentsClientHttpRequestFactory getHttpComponentsClientHttpRequestFactory() {
+        return getHttpComponentsClientHttpRequestFactory(false, false, false);
+    }
+
+    public HttpComponentsClientHttpRequestFactory getHttpComponentsClientHttpRequestFactory(boolean omitCloudConnectorProxy) {
+        return getHttpComponentsClientHttpRequestFactory(false, false, omitCloudConnectorProxy);
     }
 
     public HttpComponentsClientHttpRequestFactory getHttpComponentsClientHttpRequestFactory(
         boolean disableRedirect,
         boolean initDefaultSslConnectionSocketFactory,
-        boolean accessTokenFlowForEdgeCloudConnector
+        boolean omitCloudConnectorProxy
     ) {
         return new HttpComponentsClientHttpRequestFactory(
-            createHttpClient(disableRedirect, initDefaultSslConnectionSocketFactory, accessTokenFlowForEdgeCloudConnector)
+            createHttpClient(disableRedirect, initDefaultSslConnectionSocketFactory, omitCloudConnectorProxy)
         );
     }
 
@@ -373,20 +377,14 @@ public class HttpClientsFactory {
     }
 
     public RestTemplate createRestTemplate(BasicAuthenticationInterceptor basicAuthenticationInterceptor) {
-        RestTemplate restTemplate = new RestTemplate(getHttpComponentsClientHttpRequestFactory(false));
+        RestTemplate restTemplate = new RestTemplate(getHttpComponentsClientHttpRequestFactory());
         restTemplate.getInterceptors().add(basicAuthenticationInterceptor);
         restTemplate.getMessageConverters().add(0, new StringHttpMessageConverter(StandardCharsets.UTF_8));
         return restTemplate;
     }
 
-    public RestTemplate createRestTemplate(boolean accessTokenFlowForEdgeCloudConnector) {
-        RestTemplate restTemplate = new RestTemplate(getHttpComponentsClientHttpRequestFactory(accessTokenFlowForEdgeCloudConnector));
-        restTemplate.getMessageConverters().add(0, new StringHttpMessageConverter(StandardCharsets.UTF_8));
-        return restTemplate;
-    }
-
-    public RestTemplate createRestTemplate() {
-        RestTemplate restTemplate = new RestTemplate(getHttpComponentsClientHttpRequestFactory(false));
+    public RestTemplate createRestTemplate(boolean omitCloudConnectorProxy) {
+        RestTemplate restTemplate = new RestTemplate(getHttpComponentsClientHttpRequestFactory(omitCloudConnectorProxy));
         restTemplate.getMessageConverters().add(0, new StringHttpMessageConverter(StandardCharsets.UTF_8));
         return restTemplate;
     }
