@@ -222,19 +222,21 @@ public class HttpClientsFactory {
             null,
             0,
             0,
-            disableRedirect
+            disableRedirect,
+            false
         );
     }
 
     public HttpClientBuilder getHttpClientBuilder(SSLConnectionSocketFactory sslConnectionSocketFactory) {
-        return getHttpClientBuilder(sslConnectionSocketFactory, 0, 0, false);
+        return getHttpClientBuilder(sslConnectionSocketFactory, 0, 0, false, false);
     }
 
     public HttpClientBuilder getHttpClientBuilder(
         SSLConnectionSocketFactory sslConnectionSocketFactory,
         int maxConnPerRoute,
         int maxConnTotal,
-        boolean disableRedirect
+        boolean disableRedirect,
+        boolean omitCloudConnectorProxy
     ) {
         PoolingHttpClientConnectionManager connectionManager = PoolingHttpClientConnectionManagerBuilder.create()
             .setSSLSocketFactory(sslConnectionSocketFactory)
@@ -269,7 +271,9 @@ public class HttpClientsFactory {
         }
         if (useForBtpToOnPremiseIntegration && CloudConnectorParameters.getInstance() != null) {
             httpClientBuilder.addRequestInterceptorFirst(oAuthHttpRequestInterceptor);
-            httpClientBuilder.setRoutePlanner(defaultProxyRoutePlanner);
+            if (!omitCloudConnectorProxy) {
+                httpClientBuilder.setRoutePlanner(defaultProxyRoutePlanner);
+            }
         }
         if (disableRedirect) {
             httpClientBuilder.disableRedirectHandling();
@@ -280,11 +284,12 @@ public class HttpClientsFactory {
         return httpClientBuilder;
     }
 
+
     public HttpClient createHttpClient() {
-        return createHttpClient(false, false);
+        return createHttpClient(false, false, false);
     }
 
-    public HttpClient createHttpClient(boolean disableRedirect, boolean initDefaultSslConnectionSocketFactory) {
+    public HttpClient createHttpClient(boolean disableRedirect, boolean initDefaultSslConnectionSocketFactory, boolean omitCloudConnectorProxy) {
         SSLConnectionSocketFactory defaultFactory = null;
         if (initDefaultSslConnectionSocketFactory) {
             defaultFactory = SSLConnectionSocketFactoryBuilder.create()
@@ -296,7 +301,8 @@ public class HttpClientsFactory {
             defaultFactory,
             0,
             0,
-            disableRedirect
+            disableRedirect,
+            omitCloudConnectorProxy
         ).build();
     }
 
@@ -328,7 +334,7 @@ public class HttpClientsFactory {
     }
 
     public HttpClient createHttpClient(SSLConnectionSocketFactory sslConnectionSocketFactory, boolean disableRedirect) {
-        return getHttpClientBuilder(sslConnectionSocketFactory, 0, 0, disableRedirect).build();
+        return getHttpClientBuilder(sslConnectionSocketFactory, 0, 0, disableRedirect, false).build();
     }
 
     public HttpClient createHttpClient(
@@ -337,19 +343,24 @@ public class HttpClientsFactory {
         int maxConnTotal,
         boolean disableRedirect
     ) {
-        return getHttpClientBuilder(sslConnectionSocketFactory, maxConnPerRoute, maxConnTotal, disableRedirect).build();
+        return getHttpClientBuilder(sslConnectionSocketFactory, maxConnPerRoute, maxConnTotal, disableRedirect, false).build();
     }
 
     public HttpComponentsClientHttpRequestFactory getHttpComponentsClientHttpRequestFactory() {
-        return getHttpComponentsClientHttpRequestFactory(false, false);
+        return getHttpComponentsClientHttpRequestFactory(false, false, false);
+    }
+
+    public HttpComponentsClientHttpRequestFactory getHttpComponentsClientHttpRequestFactory(boolean omitCloudConnectorProxy) {
+        return getHttpComponentsClientHttpRequestFactory(false, false, omitCloudConnectorProxy);
     }
 
     public HttpComponentsClientHttpRequestFactory getHttpComponentsClientHttpRequestFactory(
         boolean disableRedirect,
-        boolean initDefaultSslConnectionSocketFactory
+        boolean initDefaultSslConnectionSocketFactory,
+        boolean omitCloudConnectorProxy
     ) {
         return new HttpComponentsClientHttpRequestFactory(
-            createHttpClient(disableRedirect, initDefaultSslConnectionSocketFactory)
+            createHttpClient(disableRedirect, initDefaultSslConnectionSocketFactory, omitCloudConnectorProxy)
         );
     }
 
@@ -372,10 +383,9 @@ public class HttpClientsFactory {
         return restTemplate;
     }
 
-    public RestTemplate createRestTemplate() {
-        RestTemplate restTemplate = new RestTemplate(getHttpComponentsClientHttpRequestFactory());
+    public RestTemplate createRestTemplate(boolean omitCloudConnectorProxy) {
+        RestTemplate restTemplate = new RestTemplate(getHttpComponentsClientHttpRequestFactory(omitCloudConnectorProxy));
         restTemplate.getMessageConverters().add(0, new StringHttpMessageConverter(StandardCharsets.UTF_8));
         return restTemplate;
     }
-
 }

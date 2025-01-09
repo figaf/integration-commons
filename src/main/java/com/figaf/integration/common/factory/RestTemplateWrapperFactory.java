@@ -48,6 +48,7 @@ public class RestTemplateWrapperFactory {
     public RestTemplateWrapper createRestTemplateWrapper(boolean disableRedirect) {
         HttpComponentsClientHttpRequestFactory httpComponentsClientHttpRequestFactory = httpClientsFactory.getHttpComponentsClientHttpRequestFactory(
             disableRedirect,
+            false,
             false
         );
         HttpClient httpClient = httpComponentsClientHttpRequestFactory.getHttpClient();
