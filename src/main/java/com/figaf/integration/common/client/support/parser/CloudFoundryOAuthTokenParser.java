@@ -17,7 +17,7 @@ import java.util.Map;
 public class CloudFoundryOAuthTokenParser implements OAuthTokenParser {
 
     private static final long CREATION_DATE_SHIFT = 30 * 1000L; //30 seconds
-    private static final TypeReference<Map<String, Object>> MAP_TYPE_REFERENCE = new TypeReference<Map<String, Object>>() {};
+    private static final TypeReference<Map<String, Object>> MAP_TYPE_REFERENCE = new TypeReference<>() {};
 
     private final ObjectMapper jsonMapper = new ObjectMapper();
 
@@ -30,9 +30,13 @@ public class CloudFoundryOAuthTokenParser implements OAuthTokenParser {
             }
             long creationDate = (new Date()).getTime();
             //TODO get creation date from access token if will be needed
+            Object expiresInObject = bodyObject.get("expires_in");
+            long expiresIn = expiresInObject instanceof Integer
+                ? ((Integer) expiresInObject).longValue() * 1000L
+                : Long.parseLong(expiresInObject.toString()) * 1000L;
             return new OAuthAccessToken(
-                (String)bodyObject.get("access_token"),
-                (Integer) bodyObject.get("expires_in") * 1000L,
+                (String) bodyObject.get("access_token"),
+                expiresIn,
                 creationDate - CREATION_DATE_SHIFT
             );
         } catch (IOException ex) {
