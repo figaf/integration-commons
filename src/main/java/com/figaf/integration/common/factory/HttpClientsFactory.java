@@ -241,7 +241,7 @@ public class HttpClientsFactory {
         PoolingHttpClientConnectionManager connectionManager = PoolingHttpClientConnectionManagerBuilder.create()
             .setSSLSocketFactory(sslConnectionSocketFactory)
             .setDefaultTlsConfig(TlsConfig.custom()
-                .setHandshakeTimeout(Timeout.ofSeconds(30))
+                .setHandshakeTimeout(Timeout.ofMilliseconds(socketTimeout))
                 .setSupportedProtocols(TLS.V_1_2, TLS.V_1_3) // At that point of code, we didn't have a problem when we had only TLS 1.3 but some SAP services may require TLS 1.2
                 .build())
             .setDefaultSocketConfig(SocketConfig.custom()
