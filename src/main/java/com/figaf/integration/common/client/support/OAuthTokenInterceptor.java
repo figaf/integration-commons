@@ -17,6 +17,7 @@ import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
 
 import java.io.IOException;
+import java.util.Objects;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.Arrays.asList;
@@ -43,9 +44,19 @@ public class OAuthTokenInterceptor implements ClientHttpRequestInterceptor {
             if (accessToken == null || accessToken.isExpired()) {
                 accessToken = getToken();
             }
-            request.getHeaders().add("Authorization", "Bearer " + accessToken.getValue());
+            request.getHeaders().setBearerAuth(accessToken.getValue());
         }
-        return execution.execute(request, body);
+
+        ClientHttpResponse clientHttpResponse = execution.execute(request, body);
+        if (clientHttpResponse.getStatusCode() == HttpStatus.UNAUTHORIZED) {
+            clientHttpResponse.close();
+            synchronized (this) {
+                accessToken = getToken();
+                request.getHeaders().setBearerAuth(accessToken.getValue());
+            }
+            return execution.execute(request, body);
+        }
+        return clientHttpResponse;
     }
 
     private OAuthAccessToken getToken() {
