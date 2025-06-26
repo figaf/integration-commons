@@ -6,6 +6,7 @@ import com.figaf.integration.common.exception.ClientIntegrationException;
 import com.figaf.integration.common.factory.HttpClientsFactory;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.hc.client5.http.entity.UrlEncodedFormEntity;
 import org.apache.hc.core5.http.io.entity.EntityUtils;
 import org.apache.hc.core5.http.message.BasicNameValuePair;
@@ -18,9 +19,11 @@ import org.springframework.web.util.UriComponentsBuilder;
 
 import java.io.IOException;
 import java.util.Objects;
+import java.util.Set;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.Arrays.asList;
+import static org.springframework.http.HttpStatus.*;
 
 /**
  * @author Klochkov Sergey
@@ -29,12 +32,14 @@ import static java.util.Arrays.asList;
 @RequiredArgsConstructor
 public class OAuthTokenInterceptor implements ClientHttpRequestInterceptor {
 
+    private final static Set<HttpStatusCode> RETRYABLE_STATUSES = Set.of(UNAUTHORIZED, BAD_GATEWAY, SERVICE_UNAVAILABLE, GATEWAY_TIMEOUT);
     private final OAuthTokenRequestContext oauthTokenRequestContext;
     private final OAuthTokenParser oauthTokenParser;
     private final HttpClientsFactory httpClientsFactory;
+
     private OAuthAccessToken accessToken;
 
-    //very specific logic to mitigate the unresponsive IS behavior; once the root integration issue is isolated
+    //very specific logic to mitigate the unresponsive IS behavior
     @Override
     public ClientHttpResponse intercept(
         HttpRequest request,
@@ -50,7 +55,11 @@ public class OAuthTokenInterceptor implements ClientHttpRequestInterceptor {
         ClientHttpResponse response = null;
         for (int attempt = 1; attempt <= 5; attempt++) {
             response = execution.execute(request, body);
-            if (response.getStatusCode() != HttpStatus.UNAUTHORIZED) {
+            HttpStatusCode status = response.getStatusCode();
+            String statusText = response.getStatusText();
+            boolean retryFor500 = INTERNAL_SERVER_ERROR.equals(status) && StringUtils.isBlank(statusText);
+            boolean retryable = RETRYABLE_STATUSES.contains(status) || retryFor500;
+            if (!retryable) {
                 return response;
             }
             try {
