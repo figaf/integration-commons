@@ -34,6 +34,7 @@ public class OAuthTokenInterceptor implements ClientHttpRequestInterceptor {
     private final HttpClientsFactory httpClientsFactory;
     private OAuthAccessToken accessToken;
 
+    //very specific logic to mitigate the unresponsive IS behavior; once the root integration issue is isolated
     @Override
     public ClientHttpResponse intercept(
         HttpRequest request,
@@ -46,17 +47,25 @@ public class OAuthTokenInterceptor implements ClientHttpRequestInterceptor {
             }
             request.getHeaders().setBearerAuth(accessToken.getValue());
         }
-
-        ClientHttpResponse clientHttpResponse = execution.execute(request, body);
-        if (clientHttpResponse.getStatusCode() == HttpStatus.UNAUTHORIZED) {
-            clientHttpResponse.close();
+        ClientHttpResponse response = null;
+        for (int attempt = 1; attempt <= 5; attempt++) {
+            response = execution.execute(request, body);
+            if (response.getStatusCode() != HttpStatus.UNAUTHORIZED) {
+                return response;
+            }
+            try {
+                Thread.sleep(500);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IOException("Interrupted while backing off before token refresh", e);
+            }
+            response.close();
             synchronized (this) {
                 accessToken = getToken();
                 request.getHeaders().setBearerAuth(accessToken.getValue());
             }
-            return execution.execute(request, body);
         }
-        return clientHttpResponse;
+        return response;
     }
 
     private OAuthAccessToken getToken() {
