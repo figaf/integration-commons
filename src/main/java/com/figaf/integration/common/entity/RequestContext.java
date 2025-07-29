@@ -2,6 +2,8 @@ package com.figaf.integration.common.entity;
 
 import lombok.*;
 
+import static com.figaf.integration.common.entity.CloudPlatformType.CLOUD_FOUNDRY;
+
 /**
  * @author Arsenii Istlentev
  */
@@ -12,6 +14,7 @@ import lombok.*;
 @ToString(of = {"connectionProperties", "cloudPlatformType", "platform", "restTemplateWrapperKey", "loginPageUrl", "ssoUrl", "webApiAccessMode", "samlUrl", "figafAgentId",
     "idpName", "idpApiClientId", "oauthUrl", "clientId", "authenticationType", "defaultRuntimeLocationId", "runtimeLocationId"
 })
+@Builder(toBuilder = true)
 public class RequestContext {
 
     private ConnectionProperties connectionProperties;
@@ -36,7 +39,12 @@ public class RequestContext {
     private byte[] certificate;
     private String certificatePassword;
     private boolean onPremiseEdgeSystem;
+    private boolean isEdge;
     private String edgeCloudConnectorLocationId;
+
+    // Provides all connection options needed for MPL or iFlow invocations.
+    // Used by the testing tool;
+    private ConnectionPropertiesContainer connectionPropertiesContainer;
 
     public RequestContext(
         ConnectionProperties connectionProperties,
@@ -71,7 +79,7 @@ public class RequestContext {
     public static RequestContext cpiCloudFoundry(ConnectionProperties connectionProperties, String restTemplateWrapperKey) {
         return new RequestContext(
             connectionProperties,
-            CloudPlatformType.CLOUD_FOUNDRY,
+            CLOUD_FOUNDRY,
             Platform.CPI,
             restTemplateWrapperKey
         );
@@ -89,7 +97,7 @@ public class RequestContext {
     public static RequestContext apiMgmtCloudFoundry(ConnectionProperties connectionProperties, String restTemplateWrapperKey) {
         return new RequestContext(
             connectionProperties,
-            CloudPlatformType.CLOUD_FOUNDRY,
+            CLOUD_FOUNDRY,
             Platform.API_MANAGEMENT,
             restTemplateWrapperKey
         );
@@ -122,5 +130,4 @@ public class RequestContext {
     public boolean isSapIdentityService() {
         return webApiAccessMode == WebApiAccessMode.SAP_IDENTITY_SERVICE;
     }
-
 }

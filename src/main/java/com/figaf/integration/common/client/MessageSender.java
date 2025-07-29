@@ -36,26 +36,22 @@ public abstract class MessageSender {
         log.debug("#sendMessage(ConnectionProperties testSystemProperties, String url, HttpMethod httpMethod, " +
             "HttpEntity<byte[]> requestEntity, MessageSendingAdditionalProperties messageSendingAdditionalProperties): " +
             "{}, {}, {}, {}, {}", connectionProperties, url, httpMethod, requestEntity, messageSendingAdditionalProperties);
-        switch (messageSendingAdditionalProperties.getAuthenticationType()) {
-            case BASIC:
-                return sendMessageWithBasicAuthentication(
-                    connectionProperties,
-                    url,
-                    httpMethod,
-                    requestEntity,
-                    messageSendingAdditionalProperties
-                );
-            case OAUTH:
-                return sendMessageWithOAuth(
-                    connectionProperties,
-                    url,
-                    httpMethod,
-                    requestEntity,
-                    messageSendingAdditionalProperties
-                );
-            default:
-                throw new IllegalArgumentException("Unexpected authentication type " + messageSendingAdditionalProperties.getAuthenticationType());
-        }
+        return switch (messageSendingAdditionalProperties.getAuthenticationType()) {
+            case BASIC -> sendMessageWithBasicAuthentication(
+                connectionProperties,
+                url,
+                httpMethod,
+                requestEntity,
+                messageSendingAdditionalProperties
+            );
+            case OAUTH -> sendMessageWithOAuth(
+                connectionProperties,
+                url,
+                httpMethod,
+                requestEntity,
+                messageSendingAdditionalProperties
+            );
+        };
     }
 
     public abstract ResponseEntity<String> sendMessageWithBasicAuthentication(
