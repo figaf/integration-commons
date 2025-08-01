@@ -1,6 +1,9 @@
 package com.figaf.integration.common.entity;
 
 import lombok.*;
+import org.apache.commons.lang3.StringUtils;
+
+import java.util.Objects;
 
 import static com.figaf.integration.common.entity.CloudPlatformType.CLOUD_FOUNDRY;
 
@@ -112,6 +115,16 @@ public class RequestContext {
         );
     }
 
+    public RequestContext createFromCurrentUsingConnectionPropertiesContainer() {
+        ConnectionProperties connectionProperties = isDefaultRuntime()
+            ? this.getConnectionPropertiesContainer().getConnectionPropertiesForPublicApi()
+            : this.getConnectionPropertiesContainer().getConnectionPropertiesUsernameAndPassword();
+        return this.toBuilder()
+            .connectionProperties(connectionProperties)
+            .connectionPropertiesContainer(null)
+            .build();
+    }
+
     public String getRestTemplateWrapperKey() {
         if (restTemplateWrapperKey == null) {
             restTemplateWrapperKey = "";
@@ -129,5 +142,13 @@ public class RequestContext {
 
     public boolean isSapIdentityService() {
         return webApiAccessMode == WebApiAccessMode.SAP_IDENTITY_SERVICE;
+    }
+
+    public boolean isDefaultRuntime() {
+        return isDefaultRuntime(this.getRuntimeLocationId(), this.getDefaultRuntimeLocationId());
+    }
+
+    public static boolean isDefaultRuntime(String runtimeLocationId, String defaultRuntimeLocationId) {
+        return StringUtils.isBlank(runtimeLocationId) || Objects.equals(runtimeLocationId, defaultRuntimeLocationId);
     }
 }
