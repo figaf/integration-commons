@@ -1,5 +1,6 @@
 package com.figaf.integration.common.entity;
 
+import com.figaf.integration.common.entity.message_sender.MessageSendingAdditionalProperties;
 import lombok.*;
 import org.apache.commons.lang3.StringUtils;
 
@@ -48,6 +49,8 @@ public class RequestContext {
     // Provides all connection options needed for MPL or iFlow invocations.
     // Used by the testing tool;
     private ConnectionPropertiesContainer connectionPropertiesContainer;
+
+    private MessageSendingAdditionalProperties messageSendingAdditionalProperties;
 
     public RequestContext(
         ConnectionProperties connectionProperties,
