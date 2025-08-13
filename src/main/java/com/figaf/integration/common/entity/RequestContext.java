@@ -1,6 +1,12 @@
 package com.figaf.integration.common.entity;
 
+import com.figaf.integration.common.entity.message_sender.MessageSendingAdditionalProperties;
 import lombok.*;
+import org.apache.commons.lang3.StringUtils;
+
+import java.util.Objects;
+
+import static com.figaf.integration.common.entity.CloudPlatformType.CLOUD_FOUNDRY;
 
 /**
  * @author Arsenii Istlentev
@@ -12,6 +18,7 @@ import lombok.*;
 @ToString(of = {"connectionProperties", "cloudPlatformType", "platform", "restTemplateWrapperKey", "loginPageUrl", "ssoUrl", "webApiAccessMode", "samlUrl", "figafAgentId",
     "idpName", "idpApiClientId", "oauthUrl", "clientId", "authenticationType", "defaultRuntimeLocationId", "runtimeLocationId"
 })
+@Builder(toBuilder = true)
 public class RequestContext {
 
     private ConnectionProperties connectionProperties;
@@ -36,7 +43,14 @@ public class RequestContext {
     private byte[] certificate;
     private String certificatePassword;
     private boolean onPremiseEdgeSystem;
+    private boolean isEdge;
     private String edgeCloudConnectorLocationId;
+
+    // Provides all connection options needed for MPL or iFlow invocations.
+    // Used by the testing tool;
+    private ConnectionPropertiesContainer connectionPropertiesContainer;
+
+    private MessageSendingAdditionalProperties messageSendingAdditionalProperties;
 
     public RequestContext(
         ConnectionProperties connectionProperties,
@@ -71,7 +85,7 @@ public class RequestContext {
     public static RequestContext cpiCloudFoundry(ConnectionProperties connectionProperties, String restTemplateWrapperKey) {
         return new RequestContext(
             connectionProperties,
-            CloudPlatformType.CLOUD_FOUNDRY,
+            CLOUD_FOUNDRY,
             Platform.CPI,
             restTemplateWrapperKey
         );
@@ -89,7 +103,7 @@ public class RequestContext {
     public static RequestContext apiMgmtCloudFoundry(ConnectionProperties connectionProperties, String restTemplateWrapperKey) {
         return new RequestContext(
             connectionProperties,
-            CloudPlatformType.CLOUD_FOUNDRY,
+            CLOUD_FOUNDRY,
             Platform.API_MANAGEMENT,
             restTemplateWrapperKey
         );
@@ -102,6 +116,16 @@ public class RequestContext {
             Platform.API_HUB,
             null
         );
+    }
+
+    public RequestContext createFromCurrentUsingConnectionPropertiesContainer() {
+        ConnectionProperties connectionProperties = isDefaultRuntime()
+            ? this.getConnectionPropertiesContainer().getConnectionPropertiesForPublicApi()
+            : this.getConnectionPropertiesContainer().getConnectionPropertiesUsernameAndPassword();
+        return this.toBuilder()
+            .connectionProperties(connectionProperties)
+            .connectionPropertiesContainer(null)
+            .build();
     }
 
     public String getRestTemplateWrapperKey() {
@@ -123,4 +147,11 @@ public class RequestContext {
         return webApiAccessMode == WebApiAccessMode.SAP_IDENTITY_SERVICE;
     }
 
+    public boolean isDefaultRuntime() {
+        return isDefaultRuntime(this.getRuntimeLocationId(), this.getDefaultRuntimeLocationId());
+    }
+
+    public static boolean isDefaultRuntime(String runtimeLocationId, String defaultRuntimeLocationId) {
+        return StringUtils.isBlank(runtimeLocationId) || Objects.equals(runtimeLocationId, defaultRuntimeLocationId);
+    }
 }
