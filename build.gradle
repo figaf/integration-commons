@@ -5,7 +5,7 @@ plugins {
 }
 
 group = 'com.github.figaf'
-version = '2.8'
+version = '2.9-IRT-4998-SNAPSHOT'
 
 ext {
     enableSnapshotsForDependencyResolutionAndPublishing = project.findProperty('enableSnapshots') ?: 'false'
@@ -15,22 +15,20 @@ ext {
 
     lombokVersion = '1.18.34'
     slf4jVersion = '2.0.16'
-    logbackVersion = '1.5.7'
     commonsCollectionsVersion = '4.4'
-    commonsLangVersion = '3.17.0'
+    commonsLangVersion = '3.18.0'
     commonsCodecVersion = '1.17.1'
     commonsTextVersion = '1.12.0'
     commonsIoVersion = '2.16.1'
-    httpClientVersion = '5.3.1'
-    springVersion = '6.1.14'
-    springSecurityVersion = '6.3.4'
-    jsonVersion = '20240303'
-    jacksonVersion = '2.17.2'
+    httpClientVersion = '5.5'
+    springVersion = '6.2.10'
+    springSecurityVersion = '6.4.5'
+    jsonVersion = '20250517'
+    jacksonVersion = '2.19.2'
     jsoupVersion = '1.18.1'
     sapTokenClientVersion = '3.5.3'
     icu4jVersion = '75.1'
     dom4jVersion = '2.1.4'
-    jacksonVersion = '2.17.2'
     proxyVoleVersion = '1.1.5'
 }
 
