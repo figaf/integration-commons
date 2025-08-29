@@ -5,7 +5,7 @@ plugins {
 }
 
 group = 'com.github.figaf'
-version = '2.8'
+version = '2.9-IRT-4998-SNAPSHOT'
 
 ext {
     enableSnapshotsForDependencyResolutionAndPublishing = project.findProperty('enableSnapshots') ?: 'false'
@@ -21,9 +21,9 @@ ext {
     commonsCodecVersion = '1.17.1'
     commonsTextVersion = '1.12.0'
     commonsIoVersion = '2.16.1'
-    httpClientVersion = '5.3.1'
-    springVersion = '6.1.14'
-    springSecurityVersion = '6.3.4'
+    httpClientVersion = '5.4.3'
+    springVersion = '6.2.10'
+    springSecurityVersion = '6.4.5'
     jsonVersion = '20240303'
     jacksonVersion = '2.17.2'
     jsoupVersion = '1.18.1'
