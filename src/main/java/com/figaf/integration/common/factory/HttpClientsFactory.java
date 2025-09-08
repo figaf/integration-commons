@@ -12,6 +12,8 @@ import org.apache.hc.client5.http.classic.HttpClient;
 import org.apache.hc.client5.http.config.ConnectionConfig;
 import org.apache.hc.client5.http.config.RequestConfig;
 import org.apache.hc.client5.http.config.TlsConfig;
+import org.apache.hc.client5.http.cookie.BasicCookieStore;
+import org.apache.hc.client5.http.cookie.CookieStore;
 import org.apache.hc.client5.http.cookie.StandardCookieSpec;
 import org.apache.hc.client5.http.impl.classic.HttpClientBuilder;
 import org.apache.hc.client5.http.impl.classic.HttpClients;
@@ -19,8 +21,8 @@ import org.apache.hc.client5.http.impl.io.PoolingHttpClientConnectionManager;
 import org.apache.hc.client5.http.impl.io.PoolingHttpClientConnectionManagerBuilder;
 import org.apache.hc.client5.http.impl.routing.DefaultProxyRoutePlanner;
 import org.apache.hc.client5.http.impl.routing.SystemDefaultRoutePlanner;
-import org.apache.hc.client5.http.ssl.SSLConnectionSocketFactory;
-import org.apache.hc.client5.http.ssl.SSLConnectionSocketFactoryBuilder;
+import org.apache.hc.client5.http.ssl.ClientTlsStrategyBuilder;
+import org.apache.hc.client5.http.ssl.TlsSocketStrategy;
 import org.apache.hc.core5.http.HttpHost;
 import org.apache.hc.core5.http.io.SocketConfig;
 import org.apache.hc.core5.http.ssl.TLS;
@@ -174,6 +176,232 @@ public class HttpClientsFactory {
         applyCloudConnectorParameters(locationId);
     }
 
+    public HttpClientBuilder getHttpClientBuilder(TlsSocketStrategy tlsSocketStrategy) {
+        return getHttpClientBuilder(
+            tlsSocketStrategy,
+            null,
+            0,
+            0,
+            false,
+            false
+        );
+    }
+
+    public HttpClientBuilder getHttpClientBuilder(boolean disableRedirect) {
+        return getHttpClientBuilder(
+            null,
+            null,
+            0,
+            0,
+            disableRedirect,
+            false
+        );
+    }
+
+    public HttpClientBuilder getHttpClientBuilder(
+        TlsSocketStrategy tlsStrategy,
+        CookieStore cookieStore,
+        int maxConnPerRoute,
+        int maxConnTotal,
+        boolean disableRedirect,
+        boolean omitCloudConnectorProxy
+    ) {
+        PoolingHttpClientConnectionManager connectionManager = PoolingHttpClientConnectionManagerBuilder.create()
+            .setTlsSocketStrategy(tlsStrategy)
+            .setDefaultTlsConfig(TlsConfig.custom()
+                .setHandshakeTimeout(Timeout.ofMilliseconds(socketTimeout))
+                .setSupportedProtocols(TLS.V_1_2, TLS.V_1_3) // At that point of code, we didn't have a problem when we had only TLS 1.3 but some SAP services may require TLS 1.2
+                .build())
+            .setDefaultSocketConfig(SocketConfig.custom()
+                .setSoTimeout(Timeout.ofMilliseconds(socketTimeout))
+                .build())
+            .setPoolConcurrencyPolicy(PoolConcurrencyPolicy.STRICT)
+            .setConnPoolPolicy(PoolReusePolicy.LIFO)
+            .setMaxConnPerRoute(maxConnPerRoute)
+            .setMaxConnTotal(maxConnTotal)
+            .setDefaultConnectionConfig(ConnectionConfig.custom()
+                .setSocketTimeout(Timeout.ofMilliseconds(socketTimeout))
+                .setConnectTimeout(Timeout.ofMilliseconds(connectTimeout))
+                .setTimeToLive(TimeValue.ofMinutes(10))
+                .build())
+            .build();
+
+        HttpClientBuilder httpClientBuilder = HttpClients.custom()
+            .setConnectionManager(connectionManager);
+        RequestConfig requestConfig = RequestConfig.custom()
+            .setConnectionRequestTimeout(Timeout.ofMilliseconds(connectionRequestTimeout))
+            .setCookieSpec(StandardCookieSpec.STRICT)
+            .setProtocolUpgradeEnabled(false)
+            .build();
+        httpClientBuilder.setDefaultRequestConfig(requestConfig);
+        httpClientBuilder.setDefaultCookieStore(cookieStore);
+        httpClientBuilder.setRedirectStrategy(RestrictedRedirectStrategy.INSTANCE);
+        if (useProxyForConnections) {
+            httpClientBuilder.setRoutePlanner(new SystemDefaultRoutePlanner(ProxySelector.getDefault()));
+        }
+        if (useForBtpToOnPremiseIntegration && CloudConnectorParameters.getInstance() != null) {
+            httpClientBuilder.addRequestInterceptorFirst(oAuthHttpRequestInterceptor);
+            if (!omitCloudConnectorProxy) {
+                httpClientBuilder.setRoutePlanner(defaultProxyRoutePlanner);
+            }
+        }
+        if (disableRedirect) {
+            httpClientBuilder.disableRedirectHandling();
+        }
+        if (sapAirKeyHeaderInterceptor != null) {
+            httpClientBuilder.addRequestInterceptorFirst(sapAirKeyHeaderInterceptor);
+        }
+        return httpClientBuilder;
+    }
+
+    public HttpClient createHttpClient() {
+        return createHttpClient(false, false, false, null);
+    }
+
+    public HttpClient createHttpClient(
+        boolean disableRedirect,
+        boolean initDefaultTlsSocketStrategy,
+        boolean omitCloudConnectorProxy,
+        CookieStore cookieStore
+    ) {
+        TlsSocketStrategy defaultTlsSocketStrategy = null;
+        if (initDefaultTlsSocketStrategy) {
+            defaultTlsSocketStrategy = (TlsSocketStrategy) ClientTlsStrategyBuilder.create()
+                .setSslContext(SSLContexts.createSystemDefault())
+                .setTlsVersions(TLS.V_1_2, TLS.V_1_3) // At that point of code, we didn't have a problem when we had only TLS 1.3 but some SAP services may require TLS 1.2
+                .build();
+        }
+        return getHttpClientBuilder(
+            defaultTlsSocketStrategy,
+            cookieStore,
+            0,
+            0,
+            disableRedirect,
+            omitCloudConnectorProxy
+        ).build();
+    }
+
+    public HttpClient createHttpClient(byte[] certificate, String certificatePassword, CookieStore cookieStore) {
+        try {
+            KeyStore keyStore = KeyStore.getInstance("PKCS12");
+            try (ByteArrayInputStream keyStoreInput = new ByteArrayInputStream(certificate)) {
+                keyStore.load(keyStoreInput, certificatePassword.toCharArray());
+            }
+
+            SSLContext sslContext = SSLContextBuilder.create()
+                .loadKeyMaterial(keyStore, certificatePassword.toCharArray())
+                .build();
+
+            TlsSocketStrategy tlsSocketStrategy = (TlsSocketStrategy) ClientTlsStrategyBuilder.create()
+                .setSslContext(sslContext)
+                .setTlsVersions(TLS.V_1_2, TLS.V_1_3) //SAP Passport authentication works only with TLS 1.2
+                .build();
+
+            return getHttpClientBuilder(
+                tlsSocketStrategy,
+                cookieStore,
+                0,
+                0,
+                false,
+                false
+            ).build();
+        } catch (Exception ex) {
+            log.error("Can't create httpClient with SAP Passport certificate: ", ex);
+            throw new RuntimeException(format("Can't create httpClient with SAP Passport certificate: %s", ExceptionUtils.getMessage(ex)));
+        }
+    }
+
+    public HttpClient createHttpClient(TlsSocketStrategy tlsSocketStrategy) {
+        return getHttpClientBuilder(
+            tlsSocketStrategy,
+            null,
+            0,
+            0,
+            false,
+            false
+        ).build();
+    }
+
+    public HttpClient createHttpClient(TlsSocketStrategy tlsSocketStrategy, boolean disableRedirect) {
+        return getHttpClientBuilder(
+            tlsSocketStrategy,
+            null,
+            0,
+            0,
+            disableRedirect,
+            false
+        ).build();
+    }
+
+    public HttpClient createHttpClient(
+        TlsSocketStrategy tlsSocketStrategy,
+        int maxConnPerRoute,
+        int maxConnTotal,
+        boolean disableRedirect
+    ) {
+        return getHttpClientBuilder(
+            tlsSocketStrategy,
+            null,
+            maxConnPerRoute,
+            maxConnTotal,
+            disableRedirect,
+            false
+        ).build();
+    }
+
+    public HttpComponentsClientHttpRequestFactory getHttpComponentsClientHttpRequestFactory(
+        boolean disableRedirect,
+        boolean initDefaultSslConnectionSocketFactory,
+        boolean omitCloudConnectorProxy,
+        CookieStore cookieStore
+    ) {
+        return new HttpComponentsClientHttpRequestFactory(
+            createHttpClient(disableRedirect, initDefaultSslConnectionSocketFactory, omitCloudConnectorProxy, cookieStore)
+        );
+    }
+
+    public HttpComponentsClientHttpRequestFactory getHttpComponentsClientHttpRequestFactory(RequestContext requestContext, CookieStore cookieStore) {
+        HttpClient httpClient;
+        if (requestContext.isUseSapPassport()) {
+            httpClient = createHttpClient(
+                requestContext.getCertificate(),
+                requestContext.getCertificatePassword(),
+                cookieStore
+            );
+        } else {
+            httpClient = createHttpClient(
+                false,
+                false,
+                false,
+                cookieStore
+            );
+        }
+        return new HttpComponentsClientHttpRequestFactory(httpClient);
+    }
+
+    public RestTemplate createRestTemplate(BasicAuthenticationInterceptor basicAuthenticationInterceptor) {
+        RestTemplate restTemplate = new RestTemplate(getHttpComponentsClientHttpRequestFactory(
+            false,
+            false,
+            false,
+            null
+        ));
+        restTemplate.getInterceptors().add(basicAuthenticationInterceptor);
+        restTemplate.getMessageConverters().add(0, new StringHttpMessageConverter(StandardCharsets.UTF_8));
+        return restTemplate;
+    }
+
+    public RestTemplate createRestTemplate(boolean omitCloudConnectorProxy) {
+        RestTemplate restTemplate = new RestTemplate(getHttpComponentsClientHttpRequestFactory(
+            false,
+            false,
+            omitCloudConnectorProxy,
+            null
+        ));
+        restTemplate.getMessageConverters().add(0, new StringHttpMessageConverter(StandardCharsets.UTF_8));
+        return restTemplate;
+    }
+
     private void initProxy() {
         if (this.useProxyForConnections) {
             // proxy config
@@ -215,177 +443,5 @@ public class HttpClientsFactory {
         this.defaultProxyRoutePlanner = new DefaultProxyRoutePlanner(proxy);
 
         log.info("CloudConnectorParameters are applied: {}", cloudConnectorParameters);
-    }
-
-    public HttpClientBuilder getHttpClientBuilder(boolean disableRedirect) {
-        return getHttpClientBuilder(
-            null,
-            0,
-            0,
-            disableRedirect,
-            false
-        );
-    }
-
-    public HttpClientBuilder getHttpClientBuilder(SSLConnectionSocketFactory sslConnectionSocketFactory) {
-        return getHttpClientBuilder(sslConnectionSocketFactory, 0, 0, false, false);
-    }
-
-    public HttpClientBuilder getHttpClientBuilder(
-        SSLConnectionSocketFactory sslConnectionSocketFactory,
-        int maxConnPerRoute,
-        int maxConnTotal,
-        boolean disableRedirect,
-        boolean omitCloudConnectorProxy
-    ) {
-        PoolingHttpClientConnectionManager connectionManager = PoolingHttpClientConnectionManagerBuilder.create()
-            .setSSLSocketFactory(sslConnectionSocketFactory)
-            .setDefaultTlsConfig(TlsConfig.custom()
-                .setHandshakeTimeout(Timeout.ofMilliseconds(socketTimeout))
-                .setSupportedProtocols(TLS.V_1_2, TLS.V_1_3) // At that point of code, we didn't have a problem when we had only TLS 1.3 but some SAP services may require TLS 1.2
-                .build())
-            .setDefaultSocketConfig(SocketConfig.custom()
-                .setSoTimeout(Timeout.ofMilliseconds(socketTimeout))
-                .build())
-            .setPoolConcurrencyPolicy(PoolConcurrencyPolicy.STRICT)
-            .setConnPoolPolicy(PoolReusePolicy.LIFO)
-            .setMaxConnPerRoute(maxConnPerRoute)
-            .setMaxConnTotal(maxConnTotal)
-            .setDefaultConnectionConfig(ConnectionConfig.custom()
-                .setSocketTimeout(Timeout.ofMilliseconds(socketTimeout))
-                .setConnectTimeout(Timeout.ofMilliseconds(connectTimeout))
-                .setTimeToLive(TimeValue.ofMinutes(10))
-                .build())
-            .build();
-
-        HttpClientBuilder httpClientBuilder = HttpClients.custom()
-            .setConnectionManager(connectionManager);
-        RequestConfig requestConfig = RequestConfig.custom()
-            .setConnectionRequestTimeout(Timeout.ofMilliseconds(connectionRequestTimeout))
-            .setCookieSpec(StandardCookieSpec.STRICT)
-            .build();
-        httpClientBuilder.setDefaultRequestConfig(requestConfig);
-        httpClientBuilder.setRedirectStrategy(RestrictedRedirectStrategy.INSTANCE);
-        if (useProxyForConnections) {
-            httpClientBuilder.setRoutePlanner(new SystemDefaultRoutePlanner(ProxySelector.getDefault()));
-        }
-        if (useForBtpToOnPremiseIntegration && CloudConnectorParameters.getInstance() != null) {
-            httpClientBuilder.addRequestInterceptorFirst(oAuthHttpRequestInterceptor);
-            if (!omitCloudConnectorProxy) {
-                httpClientBuilder.setRoutePlanner(defaultProxyRoutePlanner);
-            }
-        }
-        if (disableRedirect) {
-            httpClientBuilder.disableRedirectHandling();
-        }
-        if (sapAirKeyHeaderInterceptor != null) {
-            httpClientBuilder.addRequestInterceptorFirst(sapAirKeyHeaderInterceptor);
-        }
-        return httpClientBuilder;
-    }
-
-
-    public HttpClient createHttpClient() {
-        return createHttpClient(false, false, false);
-    }
-
-    public HttpClient createHttpClient(boolean disableRedirect, boolean initDefaultSslConnectionSocketFactory, boolean omitCloudConnectorProxy) {
-        SSLConnectionSocketFactory defaultFactory = null;
-        if (initDefaultSslConnectionSocketFactory) {
-            defaultFactory = SSLConnectionSocketFactoryBuilder.create()
-                .setSslContext(SSLContexts.createSystemDefault())
-                .setTlsVersions(TLS.V_1_2, TLS.V_1_3) // At that point of code, we didn't have a problem when we had only TLS 1.3 but some SAP services may require TLS 1.2
-                .build();
-        }
-        return getHttpClientBuilder(
-            defaultFactory,
-            0,
-            0,
-            disableRedirect,
-            omitCloudConnectorProxy
-        ).build();
-    }
-
-    public HttpClient createHttpClient(byte[] certificate, String certificatePassword) {
-        try {
-            KeyStore keyStore = KeyStore.getInstance("PKCS12");
-            try (ByteArrayInputStream keyStoreInput = new ByteArrayInputStream(certificate)) {
-                keyStore.load(keyStoreInput, certificatePassword.toCharArray());
-            }
-
-            SSLContext sslContext = SSLContextBuilder.create()
-                .loadKeyMaterial(keyStore, certificatePassword.toCharArray())
-                .build();
-
-            SSLConnectionSocketFactory sslConnectionSocketFactory = SSLConnectionSocketFactoryBuilder.create()
-                .setSslContext(sslContext)
-                .setTlsVersions(TLS.V_1_2, TLS.V_1_3) //SAP Passport authentication works only with TLS 1.2
-                .build();
-
-            return getHttpClientBuilder(sslConnectionSocketFactory).build();
-        } catch (Exception ex) {
-            log.error("Can't create httpClient with SAP Passport certificate: ", ex);
-            throw new RuntimeException(format("Can't create httpClient with SAP Passport certificate: %s", ExceptionUtils.getMessage(ex)));
-        }
-    }
-
-    public HttpClient createHttpClient(SSLConnectionSocketFactory sslConnectionSocketFactory) {
-        return getHttpClientBuilder(sslConnectionSocketFactory).build();
-    }
-
-    public HttpClient createHttpClient(SSLConnectionSocketFactory sslConnectionSocketFactory, boolean disableRedirect) {
-        return getHttpClientBuilder(sslConnectionSocketFactory, 0, 0, disableRedirect, false).build();
-    }
-
-    public HttpClient createHttpClient(
-        SSLConnectionSocketFactory sslConnectionSocketFactory,
-        int maxConnPerRoute,
-        int maxConnTotal,
-        boolean disableRedirect
-    ) {
-        return getHttpClientBuilder(sslConnectionSocketFactory, maxConnPerRoute, maxConnTotal, disableRedirect, false).build();
-    }
-
-    public HttpComponentsClientHttpRequestFactory getHttpComponentsClientHttpRequestFactory() {
-        return getHttpComponentsClientHttpRequestFactory(false, false, false);
-    }
-
-    public HttpComponentsClientHttpRequestFactory getHttpComponentsClientHttpRequestFactory(boolean omitCloudConnectorProxy) {
-        return getHttpComponentsClientHttpRequestFactory(false, false, omitCloudConnectorProxy);
-    }
-
-    public HttpComponentsClientHttpRequestFactory getHttpComponentsClientHttpRequestFactory(
-        boolean disableRedirect,
-        boolean initDefaultSslConnectionSocketFactory,
-        boolean omitCloudConnectorProxy
-    ) {
-        return new HttpComponentsClientHttpRequestFactory(
-            createHttpClient(disableRedirect, initDefaultSslConnectionSocketFactory, omitCloudConnectorProxy)
-        );
-    }
-
-    public HttpComponentsClientHttpRequestFactory getHttpComponentsClientHttpRequestFactory(RequestContext requestContext) {
-        if (requestContext.isUseSapPassport()) {
-            return new HttpComponentsClientHttpRequestFactory(
-                createHttpClient(requestContext.getCertificate(), requestContext.getCertificatePassword())
-            );
-        } else {
-            return new HttpComponentsClientHttpRequestFactory(
-                createHttpClient()
-            );
-        }
-    }
-
-    public RestTemplate createRestTemplate(BasicAuthenticationInterceptor basicAuthenticationInterceptor) {
-        RestTemplate restTemplate = new RestTemplate(getHttpComponentsClientHttpRequestFactory());
-        restTemplate.getInterceptors().add(basicAuthenticationInterceptor);
-        restTemplate.getMessageConverters().add(0, new StringHttpMessageConverter(StandardCharsets.UTF_8));
-        return restTemplate;
-    }
-
-    public RestTemplate createRestTemplate(boolean omitCloudConnectorProxy) {
-        RestTemplate restTemplate = new RestTemplate(getHttpComponentsClientHttpRequestFactory(omitCloudConnectorProxy));
-        restTemplate.getMessageConverters().add(0, new StringHttpMessageConverter(StandardCharsets.UTF_8));
-        return restTemplate;
     }
 }

@@ -14,6 +14,15 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.exception.ExceptionUtils;
+import org.apache.hc.client5.http.cookie.CookieOrigin;
+import org.apache.hc.client5.http.cookie.CookieStore;
+import org.apache.hc.client5.http.cookie.MalformedCookieException;
+import org.apache.hc.client5.http.impl.cookie.BasicClientCookie;
+import org.apache.hc.client5.http.impl.cookie.RFC6265CookieSpec;
+import org.apache.hc.client5.http.impl.cookie.RFC6265LaxSpec;
+import org.apache.hc.client5.http.impl.cookie.RFC6265StrictSpec;
+import org.apache.hc.core5.http.Header;
+import org.apache.hc.core5.http.message.BasicHeader;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
@@ -607,7 +616,7 @@ public class BaseClient {
         } catch (ClientIntegrationException ex) {
             throw ex;
         } catch (HttpClientErrorException.NotFound ex) {
-            throw new ClientIntegrationException(format("Can't execute GET %s successfully: %s", url, ex.getMessage()), ex);
+            throw new ClientIntegrationException(ex.getMessage(), ex);
         } catch (Exception ex) {
             String errorMessage = format("Can't execute GET %s successfully: %s",
                 url, Utils.extractMessageAndRootCauseMessage(ex, false)
@@ -638,7 +647,7 @@ public class BaseClient {
         } catch (ClientIntegrationException ex) {
             throw ex;
         } catch (HttpClientErrorException.NotFound ex) {
-            throw new ClientIntegrationException(format("Can't execute GET %s successfully: %s", url, ex.getMessage()), ex);
+            throw new ClientIntegrationException(ex.getMessage(), ex);
         } catch (Exception ex) {
             String errorMessage = format("Can't execute GET %s successfully: %s",
                 url, Utils.extractMessageAndRootCauseMessage(ex, false)
@@ -888,6 +897,7 @@ public class BaseClient {
 
     private void authorizeViaCustomIdpProvider(RequestContext requestContext, String authorizationUrl) throws URISyntaxException {
         RestTemplateWrapper restTemplateWrapper = restTemplateWrapperHolder.getOrCreateRestTemplateWrapperSingleton(requestContext);
+        restTemplateWrapper.getCookieStore().clear();
 
         String authorizationBaseUrl = getBaseUrl(authorizationUrl);
 
@@ -971,12 +981,10 @@ public class BaseClient {
         MultiValueMap<String, String> requestBody = new LinkedMultiValueMap<>();
         requestBody.add("SAMLResponse", signedSamlResponse);
         requestBody.add("RelayState", "cloudfoundry-uaa-sp");
-        HttpHeaders httpHeaders = new HttpHeaders();
-        if (CollectionUtils.isNotEmpty(cookies)) {
-            httpHeaders.add("Cookie", StringUtils.join(cookies, "; "));
-        }
 
-        HttpEntity<MultiValueMap<String, String>> request = new HttpEntity<>(requestBody, httpHeaders);
+        addCookiesToStore(cookies, restTemplateWrapper.getCookieStore(), authorizationBaseUrl);
+        HttpEntity<MultiValueMap<String, String>> request = new HttpEntity<>(requestBody, null);
+
         ResponseEntity<String> responseEntity;
         try {
             responseEntity = restTemplateWrapper.getRestTemplate().postForEntity(requestContext.getSsoUrl(), request, String.class);
@@ -995,7 +1003,11 @@ public class BaseClient {
             }
             throw new ClientIntegrationException(errorMessageBuilder.toString());
         }
+
+        List<String> responseCookies = responseEntity.getHeaders().get("Set-Cookie");
+        addCookiesToStore(responseCookies, restTemplateWrapper.getCookieStore(), authorizationBaseUrl);
     }
+
 
     private String buildDefaultLoginPageUrl(String authorizationUrl) throws MalformedURLException {
         String loginPageUrl;
@@ -1126,16 +1138,17 @@ public class BaseClient {
             if (StringUtils.isEmpty(loginUrl)) {
                 loginUrl = DEFAULT_SSO_URL;
             }
-            HttpHeaders httpHeaders = new HttpHeaders();
-            if (CollectionUtils.isNotEmpty(cookies)) {
-                httpHeaders.add("Cookie", StringUtils.join(cookies, "; "));
-            }
-            HttpEntity<MultiValueMap<String, String>> request = new HttpEntity<>(map, httpHeaders);
             RestTemplateWrapper restTemplateWrapper = restTemplateWrapperHolder.getOrCreateRestTemplateWrapperSingleton(requestContext);
+
+            addCookiesToStore(cookies, restTemplateWrapper.getCookieStore(), loginUrl);
+
+            HttpEntity<MultiValueMap<String, String>> request = new HttpEntity<>(map, null);
             ResponseEntity<String> response = restTemplateWrapper.getRestTemplate().postForEntity(loginUrl, request, String.class);
             if (StringUtils.contains(response.getBody(), "Sorry, we could not authenticate you")) {
                 throw new ClientIntegrationException("Login/password are not correct");
             }
+            List<String> responseCookies = response.getHeaders().get("Set-Cookie");
+            addCookiesToStore(responseCookies, restTemplateWrapper.getCookieStore(), loginUrl);
             return response;
         } catch (Exception ex) {
             log.error("Error: " + ex.getMessage(), ex);
@@ -1151,33 +1164,71 @@ public class BaseClient {
         HttpHeaders additionalHeaders,
         Class<RESP> responseType
     ) throws Exception {
-        log.debug("#executeRedirectRequestAfterSuccessfulAuthorization(RequestContext requestContext, String url, String initialPath, String signature, HttpHeaders additionalHeaders, Class<T> responseType): {}, {}, {}, {}, {}, {}",
-            requestContext, url, initialPath, signature, additionalHeaders, responseType
-        );
+        log.debug("#executeRedirectRequestAfterSuccessfulAuthorization: url={}, initialPath={}, signature={}, " +
+                "additionalHeaders={}, responseType={}, requestContext={}",
+            url, initialPath, signature, additionalHeaders, responseType, requestContext);
 
-        String cookie = String.format("fragmentAfterLogin=; locationAfterLogin=%s; signature=%s", URLEncoder.encode(initialPath, StandardCharsets.UTF_8), signature);
+        RestTemplateWrapper restTemplateWrapper = restTemplateWrapperHolder.getOrCreateRestTemplateWrapperSingleton(requestContext);
+        String cookieDomain = requestContext.getConnectionProperties().getHost();
+        boolean secure = "https".equalsIgnoreCase(requestContext.getConnectionProperties().getProtocol());
+
+        restTemplateWrapper.getCookieStore().addCookie(createCookie(
+            "fragmentAfterLogin",
+            "",
+            cookieDomain,
+            "/",
+            secure
+        ));
+        restTemplateWrapper.getCookieStore().addCookie(createCookie(
+            "locationAfterLogin",
+            URLEncoder.encode(initialPath, StandardCharsets.UTF_8),
+            cookieDomain,
+            "/",
+            secure
+        ));
+        restTemplateWrapper.getCookieStore().addCookie(createCookie(
+            "signature",
+            signature,
+            cookieDomain,
+            "/",
+            secure
+        ));
+
         HttpHeaders headers = new HttpHeaders();
-        headers.add("Cookie", cookie);
         if (additionalHeaders != null) {
             headers.addAll(additionalHeaders);
         }
 
         RequestEntity requestEntity = new RequestEntity(headers, HttpMethod.GET, new URI(url));
-        RestTemplateWrapper restTemplateWrapper = restTemplateWrapperHolder.getOrCreateRestTemplateWrapperSingleton(requestContext);
-
         ResponseEntity<RESP> responseEntity;
         try {
             responseEntity = restTemplateWrapper.getRestTemplate().exchange(requestEntity, responseType);
         } catch (HttpClientErrorException.Forbidden | HttpClientErrorException.NotFound ex) {
+            /*
+            After update of Spring web to 6.2.10, DefaultResponseErrorHandler adds the url to the error message.
+            But in our case it may lead to confusing error when 404 is returned by the main resource,
+            but in the error message it will look like:
+            404 Not Found on GET request for ".../login/callback/sap.default"
+            This is a consequence of the new implementation in error handler that doesn't take into consideration the fact
+            of possible redirects during request execution.
+            URL in 404 error is a good feature, but let's update it here if it doesn't contain #initialPath.
+            That change may cause another issue when 404 is returned before initialPath was executed by final redirect,
+            but for now we can leave it because such case wasn't noticed before.
+             */
+            String errorMessage = ex.getMessage();
+            String initialUrl = requestContext.getConnectionProperties().getUrlRemovingDefaultPortIfNecessary() + initialPath;
+            if (ex instanceof HttpClientErrorException.NotFound && !ex.getMessage().contains(initialUrl)) {
+                log.trace("Overwriting url in 404 error message {} to {}", errorMessage, initialUrl);
+                errorMessage = errorMessage.replaceFirst("\"https?://[^\"]+\"",  Matcher.quoteReplacement("\"" + initialUrl + "\""));
+            }
             if (requestContext.isUseCustomIdp()) {
-                throw new ClientIntegrationException(String.format("Please check that Role Collection Mappings are configured properly. " +
+                errorMessage = ("Please check that Role Collection Mappings are configured properly. " +
                     "PI_Administrator, PI_Business_Expert and PI_Integration_Developer should be assigned to the Trust Configuration with the attribute 'Groups' and the value 'Admin'. " +
                     "If you have been using the 'cpi-plugin', only PI_Integration_Developer should be assigned to the Trust Configuration with the attribute 'Groups' and the value 'Developer'." +
-                    " Error message: %s", ExceptionUtils.getMessage(ex))
-                );
-            } else {
-                throw ex;
+                    " Error message: %s").formatted(errorMessage);
             }
+
+            throw new ClientIntegrationException(errorMessage, ex);
         }
         return responseEntity;
     }
@@ -1368,6 +1419,46 @@ public class BaseClient {
             throw new ClientIntegrationException(ex);
         }
         return response;
+    }
+
+    private void addCookiesToStore(List<String> cookies, CookieStore cookieStore, String originUrl) {
+        if (CollectionUtils.isEmpty(cookies)) {
+            return;
+        }
+
+        URI authorizationBaseUri = URI.create(originUrl);
+        RFC6265CookieSpec cookieSpec = new RFC6265StrictSpec();
+        int port = authorizationBaseUri.getPort() != -1 ? authorizationBaseUri.getPort()
+            : ("https".equalsIgnoreCase(authorizationBaseUri.getScheme()) ? 443 : 80);
+        boolean secure = "https".equalsIgnoreCase(authorizationBaseUri.getScheme());
+        final CookieOrigin origin = new CookieOrigin(authorizationBaseUri.getHost(), port, "/", secure);
+        cookies.forEach(rawCookie -> {
+            final Header header = new BasicHeader("Set-Cookie", rawCookie);
+            try {
+                cookieSpec.parse(header, origin)
+                    .forEach(cookieStore::addCookie);
+            } catch (MalformedCookieException ex) {
+                throw new ClientIntegrationException(
+                    "Couldn't add cookies to storage: " + ex.getMessage(),
+                    ex
+                );
+            }
+        });
+
+    }
+
+    private BasicClientCookie createCookie(
+        String name,
+        String value,
+        String cookieDomain,
+        String cookiePath,
+        boolean secure
+    ) {
+        BasicClientCookie cookie = new BasicClientCookie(name, value);
+        cookie.setDomain(cookieDomain);
+        cookie.setPath(cookiePath);
+        cookie.setSecure(secure);
+        return cookie;
     }
 
     @Getter
