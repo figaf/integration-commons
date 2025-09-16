@@ -181,24 +181,27 @@ public class BaseClient {
         Class<RESPONSE> bodyType
     ) {
         RESPONSE responseBody;
+        final String effectivePath = !requestContext.isPreserveIntegrationSuiteUrl() && !path.startsWith("/itspaces")
+            ? "/itspaces" + path
+            : path;
         if (CloudPlatformType.CLOUD_FOUNDRY.equals(requestContext.getCloudPlatformType())) {
             ResponseEntity<RESPONSE> initialResponseEntity = executeGetRequestReturningTextBody(
                 requestContext,
                 null,
-                path,
+                effectivePath,
                 bodyType
             );
             responseBody = makeAuthRequestsIfNecessaryAndReturnNeededBody(
                 requestContext,
                 null,
-                path,
+                effectivePath,
                 initialResponseEntity,
                 bodyType
             );
         } else {
             responseBody = executeGetRequestWithBasicAuthReturningTextBody(
                 requestContext,
-                path,
+                effectivePath,
                 null,
                 bodyType
             );
@@ -264,18 +267,24 @@ public class BaseClient {
         ResponseHandlerCallbackForCrudMethods<RESULT> responseHandlerCallback
     ) {
         try {
+            final String effectivePathForToken = !requestContext.isPreserveIntegrationSuiteUrl() && !pathForToken.startsWith("/itspaces")
+                ? "/itspaces" + pathForToken
+                : pathForToken;
+            final String effectivePathMainRequest = !requestContext.isPreserveIntegrationSuiteUrl() && !pathForMainRequest.startsWith("/itspaces")
+                ? "/itspaces" + pathForMainRequest
+                : pathForMainRequest;
             if (CloudPlatformType.CLOUD_FOUNDRY.equals(requestContext.getCloudPlatformType())) {
                 RestTemplateWrapper restTemplateWrapper = restTemplateWrapperHolder.getOrCreateRestTemplateWrapperSingleton(requestContext);
-                String token = retrieveToken(requestContext, restTemplateWrapper.getRestTemplate(), pathForToken);
-                String url = buildUrl(requestContext, pathForMainRequest);
+                String token = retrieveToken(requestContext, restTemplateWrapper.getRestTemplate(), effectivePathForToken);
+                String url = buildUrl(requestContext, effectivePathMainRequest);
                 return responseHandlerCallback.apply(url, token, restTemplateWrapperHolder.getOrCreateRestTemplateWrapperSingleton(requestContext));
             } else {
                 ConnectionProperties connectionProperties = requestContext.getConnectionProperties();
                 RestTemplateWrapper restTemplateWrapper = restTemplateWrapperFactory.createRestTemplateWrapper(singleton(
                     new BasicAuthenticationInterceptor(connectionProperties.getUsername(), connectionProperties.getPassword())
                 ));
-                String token = retrieveToken(requestContext, restTemplateWrapper.getRestTemplate(), pathForToken);
-                String url = buildUrl(requestContext, pathForMainRequest);
+                String token = retrieveToken(requestContext, restTemplateWrapper.getRestTemplate(), effectivePathForToken);
+                String url = buildUrl(requestContext, effectivePathMainRequest);
                 return responseHandlerCallback.apply(url, token, restTemplateWrapper);
             }
         } catch (ClientIntegrationException ex) {
@@ -1219,7 +1228,7 @@ public class BaseClient {
             String initialUrl = requestContext.getConnectionProperties().getUrlRemovingDefaultPortIfNecessary() + initialPath;
             if (ex instanceof HttpClientErrorException.NotFound && !ex.getMessage().contains(initialUrl)) {
                 log.trace("Overwriting url in 404 error message {} to {}", errorMessage, initialUrl);
-                errorMessage = errorMessage.replaceFirst("\"https?://[^\"]+\"",  Matcher.quoteReplacement("\"" + initialUrl + "\""));
+                errorMessage = errorMessage.replaceFirst("\"https?://[^\"]+\"", Matcher.quoteReplacement("\"" + initialUrl + "\""));
             }
             if (requestContext.isUseCustomIdp()) {
                 errorMessage = ("Please check that Role Collection Mappings are configured properly. " +

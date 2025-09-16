@@ -1,6 +1,12 @@
 package com.figaf.integration.common.entity;
 
+import com.figaf.integration.common.exception.ClientIntegrationException;
 import lombok.*;
+
+import java.net.URI;
+import java.net.URISyntaxException;
+
+import static com.figaf.integration.common.entity.CloudPlatformType.CLOUD_FOUNDRY;
 
 /**
  * @author Arsenii Istlentev
@@ -12,6 +18,7 @@ import lombok.*;
 @ToString(of = {"connectionProperties", "cloudPlatformType", "platform", "restTemplateWrapperKey", "loginPageUrl", "ssoUrl", "webApiAccessMode", "samlUrl", "figafAgentId",
     "idpName", "idpApiClientId", "oauthUrl", "clientId", "authenticationType", "defaultRuntimeLocationId", "runtimeLocationId"
 })
+@Builder(toBuilder = true)
 public class RequestContext {
 
     private ConnectionProperties connectionProperties;
@@ -37,6 +44,16 @@ public class RequestContext {
     private String certificatePassword;
     private boolean onPremiseEdgeSystem;
     private String edgeCloudConnectorLocationId;
+    private String publicApiUrl;
+    private String host;
+    private Integer port;
+    private String protocol;
+    private String username;
+    private String password;
+    private String iflowClientId;
+    private String iflowClientSecret;
+    private boolean isIntegrationSuite;
+    private boolean preserveIntegrationSuiteUrl;
 
     public RequestContext(
         ConnectionProperties connectionProperties,
@@ -48,6 +65,79 @@ public class RequestContext {
         this.cloudPlatformType = cloudPlatformType;
         this.platform = platform;
         this.restTemplateWrapperKey = restTemplateWrapperKey;
+    }
+
+    public RequestContext withPreservingIntegrationSuiteUrl() {
+        return this.toBuilder()
+            .preserveIntegrationSuiteUrl(this.isIntegrationSuite)
+            .build();
+    }
+
+    public ConnectionProperties getConnectionPropertiesForTesting() {
+        if (Platform.CPI.equals(this.getPlatform()) && CLOUD_FOUNDRY.equals(this.getCloudPlatformType())) {
+            return new ConnectionProperties(
+                this.getIflowClientId(),
+                this.getIflowClientSecret(),
+                this.getHost(),
+                Integer.toString(this.getPort()),
+                this.getProtocol().toLowerCase()
+            );
+        } else {
+            return new ConnectionProperties(
+                this.getUsername(),
+                this.getPassword(),
+                this.getHost(),
+                Integer.toString(this.getPort()),
+                this.getProtocol().toLowerCase()
+            );
+        }
+    }
+
+    public ConnectionProperties getConnectionProperties() {
+        if (this.isPreserveIntegrationSuiteUrl()) {
+            return new ConnectionProperties(
+                this.getUsername(),
+                this.getPassword(),
+                this.getHost(),
+                Integer.toString(this.getPort()),
+                this.getProtocol().toLowerCase()
+            );
+        }
+        String publicApiUrl = this.getPublicApiUrl();
+        try {
+            if (publicApiUrl == null || publicApiUrl.isBlank()) {
+                throw new IllegalArgumentException("publicApiUrl is blank");
+            }
+            URI parsedPublicUrl = new URI(publicApiUrl);
+            String scheme = parsedPublicUrl.getScheme();
+            String host = parsedPublicUrl.getHost();
+            if (scheme == null || host == null) {
+                throw new IllegalArgumentException("publicApiUrl must include scheme and host");
+            }
+            int effectivePort = parsedPublicUrl.getPort() != -1
+                ? parsedPublicUrl.getPort()
+                : ("https".equalsIgnoreCase(scheme) ? 443 : 80);
+
+            return new ConnectionProperties(
+                this.getUsername(),
+                this.getPassword(),
+                host,
+                Integer.toString(effectivePort),
+                scheme.toLowerCase()
+            );
+        } catch (URISyntaxException | IllegalArgumentException ex) {
+            throw new ClientIntegrationException(ex);
+        }
+    }
+
+    public static ConnectionProperties createConnectionPropertiesForIFlow(RequestContext requestContext) {
+        return new ConnectionProperties(
+            requestContext.getIflowClientId(),
+            requestContext.getIflowClientSecret(),
+            requestContext.getHost(),
+            requestContext.getPort() != null ? requestContext.getPort().toString() : null,
+            requestContext.getProtocol().toLowerCase()
+        );
     }
 
     public static RequestContext pro(ConnectionProperties connectionProperties) {
@@ -71,7 +161,7 @@ public class RequestContext {
     public static RequestContext cpiCloudFoundry(ConnectionProperties connectionProperties, String restTemplateWrapperKey) {
         return new RequestContext(
             connectionProperties,
-            CloudPlatformType.CLOUD_FOUNDRY,
+            CLOUD_FOUNDRY,
             Platform.CPI,
             restTemplateWrapperKey
         );
@@ -89,7 +179,7 @@ public class RequestContext {
     public static RequestContext apiMgmtCloudFoundry(ConnectionProperties connectionProperties, String restTemplateWrapperKey) {
         return new RequestContext(
             connectionProperties,
-            CloudPlatformType.CLOUD_FOUNDRY,
+            CLOUD_FOUNDRY,
             Platform.API_MANAGEMENT,
             restTemplateWrapperKey
         );
