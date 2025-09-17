@@ -1,18 +1,10 @@
 package com.figaf.integration.common.entity;
 
-import com.figaf.integration.common.exception.ClientIntegrationException;
 import lombok.*;
-import org.apache.commons.lang3.StringUtils;
-import org.apache.commons.lang3.exception.ExceptionUtils;
-
 import java.io.Serializable;
-import java.net.URI;
-import java.net.URISyntaxException;
 import java.util.Objects;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-
-import static java.lang.String.format;
 
 /**
  * @author Ilya Nesterov

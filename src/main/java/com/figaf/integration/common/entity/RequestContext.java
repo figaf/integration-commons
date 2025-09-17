@@ -80,7 +80,7 @@ public class RequestContext {
                 this.getIflowClientSecret(),
                 this.getHost(),
                 Integer.toString(this.getPort()),
-                this.getProtocol().toLowerCase()
+                this.getProtocol()
             );
         } else {
             return new ConnectionProperties(
@@ -88,7 +88,7 @@ public class RequestContext {
                 this.getPassword(),
                 this.getHost(),
                 Integer.toString(this.getPort()),
-                this.getProtocol().toLowerCase()
+                this.getProtocol()
             );
         }
     }
@@ -100,7 +100,7 @@ public class RequestContext {
                 this.getPassword(),
                 this.getHost(),
                 Integer.toString(this.getPort()),
-                this.getProtocol().toLowerCase()
+                this.getProtocol()
             );
         }
         String publicApiUrl = this.getPublicApiUrl();
@@ -136,7 +136,7 @@ public class RequestContext {
             requestContext.getIflowClientSecret(),
             requestContext.getHost(),
             requestContext.getPort() != null ? requestContext.getPort().toString() : null,
-            requestContext.getProtocol().toLowerCase()
+            requestContext.getProtocol()
         );
     }
 
