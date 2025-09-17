@@ -2,11 +2,13 @@ package com.figaf.integration.common.entity;
 
 import com.figaf.integration.common.exception.ClientIntegrationException;
 import lombok.*;
+import org.apache.commons.lang3.StringUtils;
 
 import java.net.URI;
 import java.net.URISyntaxException;
 
 import static com.figaf.integration.common.entity.CloudPlatformType.CLOUD_FOUNDRY;
+import static java.lang.String.format;
 
 /**
  * @author Arsenii Istlentev
@@ -20,6 +22,8 @@ import static com.figaf.integration.common.entity.CloudPlatformType.CLOUD_FOUNDR
 })
 @Builder(toBuilder = true)
 public class RequestContext {
+
+    private static final String INTEGRATION_SUITE_URL_KEY_POSTFIX = "_INTEGRATION_SUITE_URL_KEY_POSTFIX";
 
     private ConnectionProperties connectionProperties;
     private CloudPlatformType cloudPlatformType;
@@ -67,9 +71,23 @@ public class RequestContext {
         this.restTemplateWrapperKey = restTemplateWrapperKey;
     }
 
+    /*
+           It's required to update restTemplateWrapperKey because requests to the main web api host and IS host don't have compatible session.
+           In other words, when they are executed 1 by 1, for the second request it requires to process authentication flow fully
+           e2e to get it successfully processed.
+           But it won't work in that way because of the fix for "waiting" authentication attempts that skips authentication
+           for all threads except the first. See comments in BaseClient.makeAuthRequestsWithLock.
+           It's more efficient to keep a different session context for requests to IS host
+    */
     public RequestContext withPreservingIntegrationSuiteUrl() {
-        return this.toBuilder()
+        //temporary for now we expect that restTemplateWrapperKey will be initialized with agentId from user(irt from example)
+        String computedRestTemplateKey = this.isIntegrationSuite && !getRestTemplateWrapperKey().contains(INTEGRATION_SUITE_URL_KEY_POSTFIX)
+            ? buildKeyForWebApiRequestsWithIntegrationSuiteUrl(getRestTemplateWrapperKey(), this.runtimeLocationId)
+            : getRestTemplateWrapperKey();
+
+        return toBuilder()
             .preserveIntegrationSuiteUrl(this.isIntegrationSuite)
+            .restTemplateWrapperKey(computedRestTemplateKey)
             .build();
     }
 
@@ -213,4 +231,10 @@ public class RequestContext {
         return webApiAccessMode == WebApiAccessMode.SAP_IDENTITY_SERVICE;
     }
 
+    private String buildKeyForWebApiRequestsWithIntegrationSuiteUrl(String agentId, String runtimeLocationId) {
+        if (StringUtils.isNotBlank(runtimeLocationId)) {
+            return format("%s_%s%s", agentId, runtimeLocationId, INTEGRATION_SUITE_URL_KEY_POSTFIX);
+        }
+        return agentId + INTEGRATION_SUITE_URL_KEY_POSTFIX;
+    }
 }
