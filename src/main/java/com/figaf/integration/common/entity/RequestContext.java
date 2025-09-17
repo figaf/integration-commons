@@ -123,9 +123,6 @@ public class RequestContext {
         }
         String publicApiUrl = this.getPublicApiUrl();
         try {
-            if (publicApiUrl == null || publicApiUrl.isBlank()) {
-                throw new IllegalArgumentException("publicApiUrl is blank");
-            }
             URI parsedPublicUrl = new URI(publicApiUrl);
             String scheme = parsedPublicUrl.getScheme();
             String host = parsedPublicUrl.getHost();
