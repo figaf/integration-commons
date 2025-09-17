@@ -112,37 +112,37 @@ public class RequestContext {
     }
 
     public ConnectionProperties getConnectionProperties() {
-        if (this.isPreserveIntegrationSuiteUrl()) {
-            return new ConnectionProperties(
-                this.getUsername(),
-                this.getPassword(),
-                this.getHost(),
-                Integer.toString(this.getPort()),
-                this.getProtocol()
-            );
-        }
-        String publicApiUrl = this.getPublicApiUrl();
-        try {
-            URI parsedPublicUrl = new URI(publicApiUrl);
-            String scheme = parsedPublicUrl.getScheme();
-            String host = parsedPublicUrl.getHost();
-            if (scheme == null || host == null) {
-                throw new IllegalArgumentException("publicApiUrl must include scheme and host");
-            }
-            int effectivePort = parsedPublicUrl.getPort() != -1
-                ? parsedPublicUrl.getPort()
-                : ("https".equalsIgnoreCase(scheme) ? 443 : 80);
+        String scheme = this.getProtocol();
+        String host = this.getHost();
+        int port = this.getPort();
 
-            return new ConnectionProperties(
-                this.getUsername(),
-                this.getPassword(),
-                host,
-                Integer.toString(effectivePort),
-                scheme.toLowerCase()
-            );
-        } catch (URISyntaxException | IllegalArgumentException ex) {
-            throw new ClientIntegrationException(ex);
+        if (
+            !this.isPreserveIntegrationSuiteUrl()
+             && StringUtils.isNotBlank(this.getPublicApiUrl())
+             && (this.platform == Platform.CPI || this.platform == Platform.API_MANAGEMENT)
+        ) {
+            try {
+                URI parsedPublicUrl = new URI(this.getPublicApiUrl());
+                String parsedScheme = parsedPublicUrl.getScheme();
+                String parsedHost = parsedPublicUrl.getHost();
+                if (parsedScheme == null || parsedHost == null) {
+                    throw new IllegalArgumentException("publicApiUrl must include scheme and host");
+                }
+                scheme = parsedScheme.toLowerCase();
+                host = parsedHost;
+                port = parsedPublicUrl.getPort() != -1 ? parsedPublicUrl.getPort() : ("https".equalsIgnoreCase(scheme) ? 443 : 80);
+            } catch (URISyntaxException | IllegalArgumentException ex) {
+                throw new ClientIntegrationException(ex);
+            }
         }
+
+        return new ConnectionProperties(
+            this.getUsername(),
+            this.getPassword(),
+            host,
+            String.valueOf(port),
+            scheme
+        );
     }
 
     public static ConnectionProperties createConnectionPropertiesForIFlow(RequestContext requestContext) {
