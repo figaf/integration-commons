@@ -81,12 +81,12 @@ public class RequestContext {
     */
     public RequestContext withPreservingIntegrationSuiteUrl() {
         //temporary for now we expect that restTemplateWrapperKey will be initialized with agentId from user(irt from example)
-        String computedRestTemplateKey = this.isIntegrationSuite && !getRestTemplateWrapperKey().contains(INTEGRATION_SUITE_URL_KEY_POSTFIX)
-            ? buildKeyForWebApiRequestsWithIntegrationSuiteUrl(getRestTemplateWrapperKey(), this.runtimeLocationId)
+        String computedRestTemplateKey = this.isIntegrationSuite() && !getRestTemplateWrapperKey().contains(INTEGRATION_SUITE_URL_KEY_POSTFIX)
+            ? buildKeyForWebApiRequestsWithIntegrationSuiteUrl(getRestTemplateWrapperKey(), this.getRuntimeLocationId())
             : getRestTemplateWrapperKey();
 
         return toBuilder()
-            .preserveIntegrationSuiteUrl(this.isIntegrationSuite)
+            .preserveIntegrationSuiteUrl(this.isIntegrationSuite())
             .restTemplateWrapperKey(computedRestTemplateKey)
             .build();
     }
@@ -119,7 +119,7 @@ public class RequestContext {
         if (
             !this.isPreserveIntegrationSuiteUrl()
              && StringUtils.isNotBlank(this.getPublicApiUrl())
-             && (this.platform == Platform.CPI || this.platform == Platform.API_MANAGEMENT)
+             && (this.getPlatform() == Platform.CPI || this.getPlatform() == Platform.API_MANAGEMENT)
         ) {
             try {
                 URI parsedPublicUrl = new URI(this.getPublicApiUrl());
@@ -128,7 +128,7 @@ public class RequestContext {
                 if (parsedScheme == null || parsedHost == null) {
                     throw new IllegalArgumentException("publicApiUrl must include scheme and host");
                 }
-                scheme = parsedScheme.toLowerCase();
+                scheme = parsedScheme;
                 host = parsedHost;
                 port = parsedPublicUrl.getPort() != -1 ? parsedPublicUrl.getPort() : ("https".equalsIgnoreCase(scheme) ? 443 : 80);
             } catch (URISyntaxException | IllegalArgumentException ex) {
