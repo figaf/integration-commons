@@ -93,12 +93,36 @@ public class BaseClient {
         RESULT apply(String url, String token, RestTemplateWrapper restTemplateWrapper);
     }
 
+    public String executeGet(
+        RequestContext requestContext,
+        String path
+    ) {
+        return executeGet(requestContext, path, resolvedBody -> resolvedBody, String.class);
+    }
+
     public <RESULT> RESULT executeGet(
         RequestContext requestContext,
         String path,
         ResponseHandlerCallback<RESULT, String> responseHandlerCallback
     ) {
         return executeGet(requestContext, path, responseHandlerCallback, String.class);
+    }
+
+    public <RESULT> RESULT executeGetAndReturnNullIfNotFoundErrorOccurs(
+        RequestContext requestContext,
+        String path,
+        ResponseHandlerCallback<RESULT, String> responseHandlerCallback
+    ) {
+        try {
+            return executeGet(requestContext, path, responseHandlerCallback, String.class);
+        } catch (HttpClientErrorException.NotFound ex) {
+            return null;
+        } catch (ClientIntegrationException ex) {
+            if (ex.getCause() instanceof HttpClientErrorException.NotFound) {
+                return null;
+            }
+            throw ex;
+        }
     }
 
     public <RESULT> RESULT executeGetPublicApiAndReturnResponseBody(
