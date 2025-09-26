@@ -2,7 +2,6 @@ package com.figaf.integration.common.entity;
 
 import com.figaf.integration.common.exception.ClientIntegrationException;
 import lombok.*;
-import org.apache.commons.lang3.StringUtils;
 
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -17,15 +16,13 @@ import static java.lang.String.format;
 @AllArgsConstructor
 @Getter
 @Setter
-@ToString(of = { "cloudPlatformType", "platform", "restTemplateWrapperKey", "loginPageUrl", "ssoUrl", "webApiAccessMode", "samlUrl", "figafAgentId",
+@ToString(of = {"cloudPlatformType", "platform", "restTemplateWrapperKey", "loginPageUrl", "ssoUrl", "webApiAccessMode", "samlUrl", "figafAgentId",
     "idpName", "idpApiClientId", "oauthUrl", "clientId", "authenticationType", "defaultRuntimeLocationId", "runtimeLocationId"
 })
 @Builder(toBuilder = true)
 public class RequestContext {
 
     private static final String INTEGRATION_SUITE_URL_KEY_POSTFIX = "_INTEGRATION_SUITE_URL_KEY_POSTFIX";
-
-    private ConnectionProperties connectionProperties;
     private CloudPlatformType cloudPlatformType;
     private Platform platform;
     private String restTemplateWrapperKey;
@@ -60,12 +57,10 @@ public class RequestContext {
     private boolean preserveIntegrationSuiteUrl;
 
     public RequestContext(
-        ConnectionProperties connectionProperties,
         CloudPlatformType cloudPlatformType,
         Platform platform,
         String restTemplateWrapperKey
     ) {
-        this.connectionProperties = connectionProperties;
         this.cloudPlatformType = cloudPlatformType;
         this.platform = platform;
         this.restTemplateWrapperKey = restTemplateWrapperKey;
@@ -118,8 +113,8 @@ public class RequestContext {
 
         if (
             !this.isPreserveIntegrationSuiteUrl()
-             && StringUtils.isNotBlank(this.getPublicApiUrl())
-             && (this.getPlatform() == Platform.CPI || this.getPlatform() == Platform.API_MANAGEMENT)
+                && this.getPublicApiUrl() != null && !this.getPublicApiUrl().isBlank()
+                && (this.getPlatform() == Platform.CPI || this.getPlatform() == Platform.API_MANAGEMENT)
         ) {
             try {
                 URI parsedPublicUrl = new URI(this.getPublicApiUrl());
@@ -155,54 +150,48 @@ public class RequestContext {
         );
     }
 
-    public static RequestContext pro(ConnectionProperties connectionProperties) {
+    public static RequestContext pro() {
         return new RequestContext(
-            connectionProperties,
             null,
             Platform.PRO,
             null
         );
     }
 
-    public static RequestContext cpiNeo(ConnectionProperties connectionProperties) {
+    public static RequestContext cpiNeo() {
         return new RequestContext(
-            connectionProperties,
             CloudPlatformType.NEO,
             Platform.CPI,
             null
         );
     }
 
-    public static RequestContext cpiCloudFoundry(ConnectionProperties connectionProperties, String restTemplateWrapperKey) {
+    public static RequestContext cpiCloudFoundry(String restTemplateWrapperKey) {
         return new RequestContext(
-            connectionProperties,
             CLOUD_FOUNDRY,
             Platform.CPI,
             restTemplateWrapperKey
         );
     }
 
-    public static RequestContext apiMgmtNeo(ConnectionProperties connectionProperties) {
+    public static RequestContext apiMgmtNeo() {
         return new RequestContext(
-            connectionProperties,
             CloudPlatformType.NEO,
             Platform.API_MANAGEMENT,
             null
         );
     }
 
-    public static RequestContext apiMgmtCloudFoundry(ConnectionProperties connectionProperties, String restTemplateWrapperKey) {
+    public static RequestContext apiMgmtCloudFoundry(String restTemplateWrapperKey) {
         return new RequestContext(
-            connectionProperties,
             CLOUD_FOUNDRY,
             Platform.API_MANAGEMENT,
             restTemplateWrapperKey
         );
     }
 
-    public static RequestContext apiHub(ConnectionProperties connectionProperties) {
+    public static RequestContext apiHub() {
         return new RequestContext(
-            connectionProperties,
             null,
             Platform.API_HUB,
             null
@@ -229,7 +218,7 @@ public class RequestContext {
     }
 
     private String buildKeyForWebApiRequestsWithIntegrationSuiteUrl(String agentId, String runtimeLocationId) {
-        if (StringUtils.isNotBlank(runtimeLocationId)) {
+        if (runtimeLocationId != null && !runtimeLocationId.trim().isEmpty()) {
             return format("%s_%s%s", agentId, runtimeLocationId, INTEGRATION_SUITE_URL_KEY_POSTFIX);
         }
         return agentId + INTEGRATION_SUITE_URL_KEY_POSTFIX;
