@@ -205,7 +205,7 @@ public class BaseClient {
         Class<RESPONSE> bodyType
     ) {
         RESPONSE responseBody;
-        final String effectivePath = !requestContext.isPreserveIntegrationSuiteUrl() && !path.startsWith("/itspaces")
+        final String effectivePath = shouldAppendItSpaces(path, requestContext)
             ? "/itspaces" + path
             : path;
         if (CloudPlatformType.CLOUD_FOUNDRY.equals(requestContext.getCloudPlatformType())) {
@@ -291,10 +291,10 @@ public class BaseClient {
         ResponseHandlerCallbackForCrudMethods<RESULT> responseHandlerCallback
     ) {
         try {
-            final String effectivePathForToken = !requestContext.isPreserveIntegrationSuiteUrl() && !pathForToken.startsWith("/itspaces")
+            final String effectivePathForToken = shouldAppendItSpaces(pathForToken, requestContext)
                 ? "/itspaces" + pathForToken
                 : pathForToken;
-            final String effectivePathMainRequest = !requestContext.isPreserveIntegrationSuiteUrl() && !pathForMainRequest.startsWith("/itspaces")
+            final String effectivePathMainRequest = shouldAppendItSpaces(pathForMainRequest, requestContext)
                 ? "/itspaces" + pathForMainRequest
                 : pathForMainRequest;
             if (CloudPlatformType.CLOUD_FOUNDRY.equals(requestContext.getCloudPlatformType())) {
@@ -1492,6 +1492,13 @@ public class BaseClient {
         cookie.setPath(cookiePath);
         cookie.setSecure(secure);
         return cookie;
+    }
+
+    private boolean shouldAppendItSpaces(String path, RequestContext requestContext) {
+        return requestContext.getPlatform().equals(Platform.CPI)
+            && !requestContext.isIntegrationSuite()
+            && !requestContext.isPreserveIntegrationSuiteUrl()
+            && !path.startsWith("/itspaces");
     }
 
     @Getter
