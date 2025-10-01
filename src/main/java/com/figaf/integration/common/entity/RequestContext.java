@@ -1,5 +1,6 @@
 package com.figaf.integration.common.entity;
 
+import com.figaf.integration.common.entity.message_sender.MessageSendingAdditionalProperties;
 import com.figaf.integration.common.exception.ClientIntegrationException;
 import lombok.*;
 
@@ -55,6 +56,7 @@ public class RequestContext {
     private String iflowClientSecret;
     private boolean isIntegrationSuite;
     private boolean preserveIntegrationSuiteUrl;
+    private MessageSendingAdditionalProperties messageSendingAdditionalProperties;
 
     public RequestContext(
         CloudPlatformType cloudPlatformType,
