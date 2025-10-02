@@ -39,14 +39,14 @@ public abstract class MessageSender {
             "{}, {}, {}, {}, {}", connectionProperties, url, httpMethod, requestEntity, messageSendingAdditionalProperties);
         return switch (messageSendingAdditionalProperties.getAuthenticationType()) {
             case BASIC -> sendMessageWithBasicAuthentication(
-                connectionProperties,
+                requestContext,
                 url,
                 httpMethod,
                 requestEntity,
                 messageSendingAdditionalProperties
             );
             case OAUTH -> sendMessageWithOAuth(
-                connectionProperties,
+                requestContext,
                 url,
                 httpMethod,
                 requestEntity,
@@ -56,7 +56,7 @@ public abstract class MessageSender {
     }
 
     public abstract ResponseEntity<String> sendMessageWithBasicAuthentication(
-        ConnectionProperties connectionProperties,
+        RequestContext requestContext,
         String url,
         HttpMethod httpMethod,
         HttpEntity<byte[]> requestEntity,
@@ -64,7 +64,7 @@ public abstract class MessageSender {
     );
 
     public abstract ResponseEntity<String> sendMessageWithOAuth(
-        ConnectionProperties connectionProperties,
+        RequestContext requestContext,
         String url,
         HttpMethod httpMethod,
         HttpEntity<byte[]> requestEntity,
