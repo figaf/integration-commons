@@ -8,6 +8,7 @@ import java.net.URI;
 import java.net.URISyntaxException;
 
 import static com.figaf.integration.common.entity.CloudPlatformType.CLOUD_FOUNDRY;
+import static com.figaf.integration.common.entity.Platform.API_MANAGEMENT;
 import static java.lang.String.format;
 
 /**
@@ -57,6 +58,10 @@ public class RequestContext {
     private boolean isIntegrationSuite;
     private boolean preserveIntegrationSuiteUrl;
     private MessageSendingAdditionalProperties messageSendingAdditionalProperties;
+    //oauth2 api management
+    private boolean useOAuthForTesting;
+    private String apiProxyClientSecretCredentialId;
+    private String credentialValue;
 
     public RequestContext(
         CloudPlatformType cloudPlatformType,
@@ -78,48 +83,61 @@ public class RequestContext {
     */
     public RequestContext withPreservingIntegrationSuiteUrl() {
         //temporary for now we expect that restTemplateWrapperKey will be initialized with agentId from user(irt from example)
-        String computedRestTemplateKey = this.isIntegrationSuite() && !getRestTemplateWrapperKey().contains(INTEGRATION_SUITE_URL_KEY_POSTFIX)
-            ? buildKeyForWebApiRequestsWithIntegrationSuiteUrl(getRestTemplateWrapperKey(), this.getRuntimeLocationId())
+        String computedRestTemplateKey = isIntegrationSuite() && !getRestTemplateWrapperKey().contains(INTEGRATION_SUITE_URL_KEY_POSTFIX)
+            ? buildKeyForWebApiRequestsWithIntegrationSuiteUrl(getRestTemplateWrapperKey(), getRuntimeLocationId())
             : getRestTemplateWrapperKey();
 
         return toBuilder()
-            .preserveIntegrationSuiteUrl(this.isIntegrationSuite())
+            .preserveIntegrationSuiteUrl(isIntegrationSuite())
             .restTemplateWrapperKey(computedRestTemplateKey)
             .build();
     }
 
     public ConnectionProperties getConnectionPropertiesForTesting() {
-        if (Platform.CPI.equals(this.getPlatform()) && CLOUD_FOUNDRY.equals(this.getCloudPlatformType())) {
+        String host = getHost();
+        String port = Integer.toString(getPort());
+        String protocol = getProtocol();
+
+        if (Platform.API_MANAGEMENT.equals(getPlatform()) && useOAuthForTesting) {
             return new ConnectionProperties(
-                this.getIflowClientId(),
-                this.getIflowClientSecret(),
-                this.getHost(),
-                Integer.toString(this.getPort()),
-                this.getProtocol()
-            );
-        } else {
-            return new ConnectionProperties(
-                this.getUsername(),
-                this.getPassword(),
-                this.getHost(),
-                Integer.toString(this.getPort()),
-                this.getProtocol()
+                getApiProxyClientSecretCredentialId(),
+                getCredentialValue(),
+                host,
+                port,
+                protocol
             );
         }
+
+        if (Platform.CPI.equals(getPlatform()) && CloudPlatformType.CLOUD_FOUNDRY.equals(getCloudPlatformType())) {
+            return new ConnectionProperties(
+                getIflowClientId(),
+                getIflowClientSecret(),
+                host,
+                port,
+                protocol
+            );
+        }
+
+        return new ConnectionProperties(
+            getUsername(),
+            getPassword(),
+            host,
+            port,
+            protocol
+        );
     }
 
     public ConnectionProperties getConnectionProperties() {
-        String scheme = this.getProtocol();
-        String host = this.getHost();
-        int port = this.getPort();
+        String scheme = getProtocol();
+        String host = getHost();
+        int port = getPort();
 
-        if (
-            !this.isPreserveIntegrationSuiteUrl()
-                && this.getPublicApiUrl() != null && !this.getPublicApiUrl().isBlank()
-                && (this.getPlatform() == Platform.CPI || this.getPlatform() == Platform.API_MANAGEMENT)
+        if (!isPreserveIntegrationSuiteUrl()
+            && getPublicApiUrl() != null && !getPublicApiUrl().isBlank()
+            && (getPlatform() == Platform.CPI || getPlatform() == API_MANAGEMENT)
         ) {
             try {
-                URI parsedPublicUrl = new URI(this.getPublicApiUrl());
+                URI parsedPublicUrl = new URI(getPublicApiUrl());
                 String parsedScheme = parsedPublicUrl.getScheme();
                 String parsedHost = parsedPublicUrl.getHost();
                 if (parsedScheme == null || parsedHost == null) {
@@ -134,21 +152,11 @@ public class RequestContext {
         }
 
         return new ConnectionProperties(
-            this.getUsername(),
-            this.getPassword(),
+            getUsername(),
+            getPassword(),
             host,
             String.valueOf(port),
             scheme
-        );
-    }
-
-    public static ConnectionProperties createConnectionPropertiesForIFlow(RequestContext requestContext) {
-        return new ConnectionProperties(
-            requestContext.getIflowClientId(),
-            requestContext.getIflowClientSecret(),
-            requestContext.getHost(),
-            requestContext.getPort() != null ? requestContext.getPort().toString() : null,
-            requestContext.getProtocol()
         );
     }
 
@@ -179,7 +187,7 @@ public class RequestContext {
     public static RequestContext apiMgmtNeo() {
         return new RequestContext(
             CloudPlatformType.NEO,
-            Platform.API_MANAGEMENT,
+            API_MANAGEMENT,
             null
         );
     }
@@ -187,7 +195,7 @@ public class RequestContext {
     public static RequestContext apiMgmtCloudFoundry(String restTemplateWrapperKey) {
         return new RequestContext(
             CLOUD_FOUNDRY,
-            Platform.API_MANAGEMENT,
+            API_MANAGEMENT,
             restTemplateWrapperKey
         );
     }

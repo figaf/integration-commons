@@ -33,10 +33,9 @@ public abstract class MessageSender {
         HttpEntity<byte[]> requestEntity
     ) {
         MessageSendingAdditionalProperties messageSendingAdditionalProperties = requestContext.getMessageSendingAdditionalProperties();
-        ConnectionProperties connectionProperties = requestContext.getConnectionProperties();
-        log.debug("#sendMessage(ConnectionProperties testSystemProperties, String url, HttpMethod httpMethod, " +
+        log.debug("#sendMessage(RequestContext requestContext, String url, HttpMethod httpMethod, " +
             "HttpEntity<byte[]> requestEntity, MessageSendingAdditionalProperties messageSendingAdditionalProperties): " +
-            "{}, {}, {}, {}, {}", connectionProperties, url, httpMethod, requestEntity, messageSendingAdditionalProperties);
+            "{}, {}, {}, {}, {}", requestContext, url, httpMethod, requestEntity, messageSendingAdditionalProperties);
         return switch (messageSendingAdditionalProperties.getAuthenticationType()) {
             case BASIC -> sendMessageWithBasicAuthentication(
                 requestContext,

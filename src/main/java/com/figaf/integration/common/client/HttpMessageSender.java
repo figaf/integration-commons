@@ -42,10 +42,11 @@ public class HttpMessageSender extends MessageSender {
         HttpEntity<byte[]> requestEntity,
         MessageSendingAdditionalProperties messageSendingAdditionalProperties
     ) {
+        ConnectionProperties connectionProperties = requestContext.getConnectionPropertiesForTesting();
         RestTemplate restTemplate = restTemplateWrapperHolder.getOrCreateRestTemplateWrapperSingletonWithInterceptors(
             messageSendingAdditionalProperties.getRestTemplateWrapperKey(),
             singleton(
-                new BasicAuthenticationInterceptor(requestContext.getUsername(), requestContext.getPassword())
+                new BasicAuthenticationInterceptor(connectionProperties.getUsername(), connectionProperties.getPassword())
             )
         ).getRestTemplate();
         return sendMessage(
@@ -64,12 +65,13 @@ public class HttpMessageSender extends MessageSender {
         HttpEntity<byte[]> requestEntity,
         MessageSendingAdditionalProperties messageSendingAdditionalProperties
     ) {
+        ConnectionProperties connectionProperties = requestContext.getConnectionPropertiesForTesting();
         RestTemplate restTemplate = restTemplateWrapperHolder.getOrCreateRestTemplateWrapperSingletonWithInterceptors(
             messageSendingAdditionalProperties.getRestTemplateWrapperKey(),
             singleton(new OAuthTokenInterceptor(
                 new OAuthTokenRequestContext(
-                    requestContext.getIflowClientId(),
-                    requestContext.getIflowClientSecret(),
+                    connectionProperties.getUsername(),
+                    connectionProperties.getPassword(),
                     messageSendingAdditionalProperties.getOauthUrl()
                 ),
                 new CloudFoundryOAuthTokenParser(),
