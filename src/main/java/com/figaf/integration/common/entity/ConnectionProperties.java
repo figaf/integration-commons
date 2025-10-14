@@ -1,7 +1,6 @@
 package com.figaf.integration.common.entity;
 
 import lombok.*;
-
 import java.io.Serializable;
 import java.util.Objects;
 import java.util.regex.Matcher;
@@ -35,6 +34,10 @@ public class ConnectionProperties implements Serializable {
         this.password = password;
     }
 
+    public static String buildUrl(String protocol, String host, String port) {
+        return String.format("%s://%s%s", protocol, host, port != null ? ":" + port : "");
+    }
+
     public String getURL() {
         StringBuilder urlBuilder = new StringBuilder();
 
@@ -47,11 +50,6 @@ public class ConnectionProperties implements Serializable {
         urlBuilder.append(":");
         urlBuilder.append(port);
         return urlBuilder.toString();
-    }
-
-
-    public static String buildUrl(String protocol, String host, String port) {
-        return String.format("%s://%s%s", protocol, host, port != null ? ":" + port : "");
     }
 
     public String getUrlRemovingDefaultPortIfNecessary() {

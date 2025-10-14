@@ -19,7 +19,6 @@ import org.apache.hc.client5.http.cookie.CookieStore;
 import org.apache.hc.client5.http.cookie.MalformedCookieException;
 import org.apache.hc.client5.http.impl.cookie.BasicClientCookie;
 import org.apache.hc.client5.http.impl.cookie.RFC6265CookieSpec;
-import org.apache.hc.client5.http.impl.cookie.RFC6265LaxSpec;
 import org.apache.hc.client5.http.impl.cookie.RFC6265StrictSpec;
 import org.apache.hc.core5.http.Header;
 import org.apache.hc.core5.http.message.BasicHeader;
@@ -206,24 +205,27 @@ public class BaseClient {
         Class<RESPONSE> bodyType
     ) {
         RESPONSE responseBody;
+        final String effectivePath = shouldAppendItSpaces(path, requestContext)
+            ? "/itspaces" + path
+            : path;
         if (CloudPlatformType.CLOUD_FOUNDRY.equals(requestContext.getCloudPlatformType())) {
             ResponseEntity<RESPONSE> initialResponseEntity = executeGetRequestReturningTextBody(
                 requestContext,
                 null,
-                path,
+                effectivePath,
                 bodyType
             );
             responseBody = makeAuthRequestsIfNecessaryAndReturnNeededBody(
                 requestContext,
                 null,
-                path,
+                effectivePath,
                 initialResponseEntity,
                 bodyType
             );
         } else {
             responseBody = executeGetRequestWithBasicAuthReturningTextBody(
                 requestContext,
-                path,
+                effectivePath,
                 null,
                 bodyType
             );
@@ -289,18 +291,24 @@ public class BaseClient {
         ResponseHandlerCallbackForCrudMethods<RESULT> responseHandlerCallback
     ) {
         try {
+            final String effectivePathForToken = shouldAppendItSpaces(pathForToken, requestContext)
+                ? "/itspaces" + pathForToken
+                : pathForToken;
+            final String effectivePathMainRequest = shouldAppendItSpaces(pathForMainRequest, requestContext)
+                ? "/itspaces" + pathForMainRequest
+                : pathForMainRequest;
             if (CloudPlatformType.CLOUD_FOUNDRY.equals(requestContext.getCloudPlatformType())) {
                 RestTemplateWrapper restTemplateWrapper = restTemplateWrapperHolder.getOrCreateRestTemplateWrapperSingleton(requestContext);
-                String token = retrieveToken(requestContext, restTemplateWrapper.getRestTemplate(), pathForToken);
-                String url = buildUrl(requestContext, pathForMainRequest);
+                String token = retrieveToken(requestContext, restTemplateWrapper.getRestTemplate(), effectivePathForToken);
+                String url = buildUrl(requestContext, effectivePathMainRequest);
                 return responseHandlerCallback.apply(url, token, restTemplateWrapperHolder.getOrCreateRestTemplateWrapperSingleton(requestContext));
             } else {
                 ConnectionProperties connectionProperties = requestContext.getConnectionProperties();
                 RestTemplateWrapper restTemplateWrapper = restTemplateWrapperFactory.createRestTemplateWrapper(singleton(
                     new BasicAuthenticationInterceptor(connectionProperties.getUsername(), connectionProperties.getPassword())
                 ));
-                String token = retrieveToken(requestContext, restTemplateWrapper.getRestTemplate(), pathForToken);
-                String url = buildUrl(requestContext, pathForMainRequest);
+                String token = retrieveToken(requestContext, restTemplateWrapper.getRestTemplate(), effectivePathForToken);
+                String url = buildUrl(requestContext, effectivePathMainRequest);
                 return responseHandlerCallback.apply(url, token, restTemplateWrapper);
             }
         } catch (ClientIntegrationException ex) {
@@ -1480,6 +1488,12 @@ public class BaseClient {
         cookie.setPath(cookiePath);
         cookie.setSecure(secure);
         return cookie;
+    }
+
+    private boolean shouldAppendItSpaces(String path, RequestContext requestContext) {
+        return requestContext.getPlatform().equals(Platform.CPI)
+            && !requestContext.isPreserveIntegrationSuiteUrl()
+            && !path.startsWith("/itspaces");
     }
 
     @Getter

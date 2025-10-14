@@ -4,6 +4,7 @@ import com.figaf.integration.common.client.support.OAuthTokenInterceptor;
 import com.figaf.integration.common.client.support.parser.CloudFoundryOAuthTokenParser;
 import com.figaf.integration.common.entity.ConnectionProperties;
 import com.figaf.integration.common.entity.OAuthTokenRequestContext;
+import com.figaf.integration.common.entity.RequestContext;
 import com.figaf.integration.common.entity.message_sender.MessageSendingAdditionalProperties;
 import com.figaf.integration.common.factory.HttpClientsFactory;
 import lombok.extern.slf4j.Slf4j;
@@ -35,12 +36,13 @@ public class HttpMessageSender extends MessageSender {
     }
 
     public ResponseEntity<String> sendMessageWithBasicAuthentication(
-        ConnectionProperties connectionProperties,
+        RequestContext requestContext,
         String url,
         HttpMethod httpMethod,
         HttpEntity<byte[]> requestEntity,
         MessageSendingAdditionalProperties messageSendingAdditionalProperties
     ) {
+        ConnectionProperties connectionProperties = requestContext.getConnectionPropertiesForTesting();
         RestTemplate restTemplate = restTemplateWrapperHolder.getOrCreateRestTemplateWrapperSingletonWithInterceptors(
             messageSendingAdditionalProperties.getRestTemplateWrapperKey(),
             singleton(
@@ -57,12 +59,13 @@ public class HttpMessageSender extends MessageSender {
     }
 
     public ResponseEntity<String> sendMessageWithOAuth(
-        ConnectionProperties connectionProperties,
+        RequestContext requestContext,
         String url,
         HttpMethod httpMethod,
         HttpEntity<byte[]> requestEntity,
         MessageSendingAdditionalProperties messageSendingAdditionalProperties
     ) {
+        ConnectionProperties connectionProperties = requestContext.getConnectionPropertiesForTesting();
         RestTemplate restTemplate = restTemplateWrapperHolder.getOrCreateRestTemplateWrapperSingletonWithInterceptors(
             messageSendingAdditionalProperties.getRestTemplateWrapperKey(),
             singleton(new OAuthTokenInterceptor(
