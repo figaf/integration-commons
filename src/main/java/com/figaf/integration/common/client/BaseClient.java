@@ -31,6 +31,7 @@ import org.springframework.http.client.support.BasicAuthenticationInterceptor;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.RestTemplate;
 
@@ -645,10 +646,8 @@ public class BaseClient {
             RestTemplateWrapper restTemplateWrapper = restTemplateWrapperHolder.getOrCreateRestTemplateWrapperSingleton(requestContext);
             ResponseEntity<RESULT> responseEntity = restTemplateWrapper.getRestTemplate().exchange(requestEntity, bodyType);
             return responseEntity;
-        } catch (ClientIntegrationException ex) {
+        } catch (ClientIntegrationException | HttpClientErrorException | HttpServerErrorException ex) {
             throw ex;
-        } catch (HttpClientErrorException.NotFound ex) {
-            throw new ClientIntegrationException(ex.getMessage(), ex);
         } catch (Exception ex) {
             String errorMessage = format("Can't execute GET %s successfully: %s",
                 url, Utils.extractMessageAndRootCauseMessage(ex, false)
@@ -676,10 +675,8 @@ public class BaseClient {
             }
             ResponseEntity<RESULT> responseEntity = restTemplateWithBasicAuth.exchange(requestEntity, bodyType);
             return responseEntity.getBody();
-        } catch (ClientIntegrationException ex) {
+        } catch (ClientIntegrationException | HttpClientErrorException | HttpServerErrorException ex) {
             throw ex;
-        } catch (HttpClientErrorException.NotFound ex) {
-            throw new ClientIntegrationException(ex.getMessage(), ex);
         } catch (Exception ex) {
             String errorMessage = format("Can't execute GET %s successfully: %s",
                 url, Utils.extractMessageAndRootCauseMessage(ex, false)
