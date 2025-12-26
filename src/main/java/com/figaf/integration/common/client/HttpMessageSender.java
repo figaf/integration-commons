@@ -13,9 +13,13 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.support.BasicAuthenticationInterceptor;
+import org.springframework.util.Assert;
 import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.RequestCallback;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
+
+import java.util.ArrayList;
 
 import static java.util.Collections.singleton;
 import static java.util.Collections.singletonList;
@@ -96,19 +100,40 @@ public class HttpMessageSender extends MessageSender {
     ) {
         UriComponentsBuilder uriBuilder = UriComponentsBuilder.fromHttpUrl(url);
         String uri = uriBuilder.toUriString();
-        HttpEntity<byte[]> actualRequestEntity = createActualRequestEntity(
-            restTemplate,
-            uri,
-            requestEntity,
-            messageSendingAdditionalProperties
-        );
-        try {
-            return restTemplate.exchange(
-                uri,
-                httpMethod,
-                actualRequestEntity,
-                String.class
+
+        String csrfToken = null;
+        if (messageSendingAdditionalProperties.isCsrfProtected()) {
+            csrfToken = csrfTokenHolder.getCsrfToken(
+                messageSendingAdditionalProperties.getRestTemplateWrapperKey(),
+                restTemplate,
+                url
             );
+        }
+
+        try {
+            if (messageSendingAdditionalProperties.isRawMode()) {
+                ResponseEntity<String> result = restTemplate.execute(
+                    uri,
+                    httpMethod,
+                    createRequestCallbackWithCsrfTokenIfNeeds(
+                        requestEntity,
+                        csrfToken
+                    ),
+                    restTemplate.responseEntityExtractor(String.class)
+                );
+                Assert.state(result != null, "No result");
+                return result;
+            } else {
+                return restTemplate.exchange(
+                    uri,
+                    httpMethod,
+                    createRequestEntityWithCsrfTokenIfNeeds(
+                        requestEntity,
+                        csrfToken
+                    ),
+                    String.class
+                );
+            }
         } catch (HttpClientErrorException.Forbidden ex) {
             return processForbiddenHttpClientErrorException(
                 ex,
@@ -117,26 +142,8 @@ public class HttpMessageSender extends MessageSender {
                 requestEntity,
                 httpMethod,
                 messageSendingAdditionalProperties,
-                actualRequestEntity.getHeaders().getFirst(X_CSRF_TOKEN)
+                csrfToken
             );
-        }
-    }
-
-    private HttpEntity<byte[]> createActualRequestEntity(
-        RestTemplate restTemplate,
-        String url,
-        HttpEntity<byte[]> requestEntity,
-        MessageSendingAdditionalProperties messageSendingAdditionalProperties
-    ) {
-        if (messageSendingAdditionalProperties.isCsrfProtected()) {
-            return createRequestEntityWithCsrfToken(
-                restTemplate,
-                url,
-                requestEntity,
-                messageSendingAdditionalProperties.getRestTemplateWrapperKey()
-            );
-        } else {
-            return requestEntity;
         }
     }
 
@@ -152,30 +159,44 @@ public class HttpMessageSender extends MessageSender {
         if (ex.getResponseHeaders() != null &&
             "required".equalsIgnoreCase(ex.getResponseHeaders().getFirst(X_CSRF_TOKEN))
         ) {
-            return restTemplate.exchange(
-                url,
-                httpMethod,
-                createRequestEntityWithNewCsrfToken(
-                    restTemplate,
+            if (messageSendingAdditionalProperties.isRawMode()) {
+                ResponseEntity<String> result = restTemplate.execute(
                     url,
-                    requestEntity,
-                    messageSendingAdditionalProperties.getRestTemplateWrapperKey(),
-                    oldToken
-                ),
-                String.class
-            );
+                    httpMethod,
+                    createRequestCallbackWithNewCsrfToken(
+                        requestEntity,
+                        restTemplate,
+                        url,
+                        messageSendingAdditionalProperties.getRestTemplateWrapperKey(),
+                        oldToken
+                    ),
+                    restTemplate.responseEntityExtractor(String.class)
+                );
+                Assert.state(result != null, "No result");
+                return result;
+            } else {
+                return restTemplate.exchange(
+                    url,
+                    httpMethod,
+                    createRequestEntityWithNewCsrfToken(
+                        restTemplate,
+                        url,
+                        requestEntity,
+                        messageSendingAdditionalProperties.getRestTemplateWrapperKey(),
+                        oldToken
+                    ),
+                    String.class
+                );
+            }
         } else {
             throw ex;
         }
     }
 
-    private HttpEntity<byte[]> createRequestEntityWithCsrfToken(
-        RestTemplate restTemplate,
-        String url,
+    private HttpEntity<byte[]> createRequestEntityWithCsrfTokenIfNeeds(
         HttpEntity<byte[]> requestEntity,
-        String tokenKey
+        String csrfToken
     ) {
-        String csrfToken = csrfTokenHolder.getCsrfToken(tokenKey, restTemplate, url);
         HttpHeaders httpHeaders = new HttpHeaders();
         httpHeaders.addAll(requestEntity.getHeaders());
         httpHeaders.put(X_CSRF_TOKEN, singletonList(csrfToken));
@@ -194,5 +215,46 @@ public class HttpMessageSender extends MessageSender {
         httpHeaders.addAll(requestEntity.getHeaders());
         httpHeaders.put(X_CSRF_TOKEN, singletonList(csrfToken));
         return new HttpEntity<>(requestEntity.getBody(), httpHeaders);
+    }
+
+    private RequestCallback createRequestCallbackWithCsrfTokenIfNeeds(
+        HttpEntity<byte[]> requestEntity,
+        String csrfToken
+    ) {
+        if (csrfToken == null) {
+            return createRequestCallback(requestEntity);
+        }
+
+        return request -> {
+            createRequestCallback(requestEntity).doWithRequest(request);
+            request.getHeaders().set(X_CSRF_TOKEN, csrfToken);
+        };
+    }
+
+    private RequestCallback createRequestCallbackWithNewCsrfToken(
+        HttpEntity<byte[]> requestEntity,
+        RestTemplate restTemplate,
+        String url,
+        String tokenKey,
+        String oldToken
+    ) {
+        String csrfToken = csrfTokenHolder.getAndSaveNewCsrfTokenIfNeed(tokenKey, restTemplate, url, oldToken);
+        return request -> {
+            createRequestCallback(requestEntity).doWithRequest(request);
+            request.getHeaders().set(X_CSRF_TOKEN, csrfToken);
+        };
+    }
+
+    private RequestCallback createRequestCallback(HttpEntity<byte[]> requestEntity) {
+        return request -> {
+            if (!requestEntity.getHeaders().isEmpty()) {
+                requestEntity.getHeaders().forEach(
+                    (key, values) -> request.getHeaders().put(key, new ArrayList<>(values))
+                );
+            }
+            if (requestEntity.getBody() != null) {
+                request.getBody().write(requestEntity.getBody());
+            }
+        };
     }
 }
